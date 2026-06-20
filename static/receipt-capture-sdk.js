@@ -4,56 +4,48 @@
  * Client side of the cloud-hybrid architecture. Prepares and delivers an
  * optimized media payload; NO fraud / dedup / DB logic lives here.
  *
- * Engine (headless):
- *   - Rear camera (macro/continuous focus) with graceful fallback
- *   - DPR-aware crop of the frame region from the raw sensor matrix
- *   - Tilted-phone skew rotation (landscape sensor + portrait layout -> 90° CW)
- *   - Luminance guardrail, grayscale JPEG @ 0.85
- *   - Multi-image vertical stitching
- *   - Presigned-PUT + 2s polling transmission pipeline
+ * Engine (headless): rear camera (macro focus) w/ fallback, DPR-aware crop,
+ * skew rotation, luminance guard, grayscale JPEG @0.85, vertical stitching,
+ * presigned-PUT + 2s polling pipeline.
  *
- * Guided UI (full-screen, Ibotta-style), two modes:
- *   LIVE  — edge-to-edge preview, corner-bracket frame, real-time coaching
- *           (lighting / glare / steadiness), ready indicator, optional
- *           auto-capture, flash/torch toggle.
- *   REVIEW — after each shot: frozen still + "Store / Date/Time / Total" field
- *           checklist, with Retake · Use receipt photo · Long receipt? Add
- *           section. "Add section" loops back to LIVE for the next part of a
- *           long receipt; "Use receipt photo" stitches + uploads + analyzes.
+ * Guided UI (full-screen), two modes:
+ *   LIVE   — edge-to-edge preview with per-edge detection: each of the left /
+ *            right / bottom edges shows GREEN ✓ when its edge is detected, AMBER
+ *            ? when not. The bottom edge only appears when the receipt's end is
+ *            actually in view. Capture is MANUAL (tap the shutter). On a
+ *            continuation section a tinted sliver of the previous capture is
+ *            pinned to the top to line up the stitch.
+ *   REVIEW  — frozen still + "Store / Date/Time / Total" checklist, with
+ *            Retake · Use receipt photo · Long receipt? Add section.
  *
- * High-level usage:
- *   const sdk = new ReceiptCaptureSDK({ userId, endpoints, autoCapture:true });
- *   const result = await sdk.captureFlow();
- *   // rejects {cancelled:true} if the user closes it, or an Error on failure.
+ * Usage:
+ *   const sdk = new ReceiptCaptureSDK({ userId, endpoints });
+ *   const result = await sdk.captureFlow();   // rejects {cancelled:true} on close
  */
 (function (global) {
   "use strict";
 
   const DEFAULTS = {
-    reticleWidthRatio: 0.88,
-    reticleHeightRatio: 0.6,
     idealWidth: 1920,
     idealHeight: 1080,
     jpegQuality: 0.85,
     grayscale: true,
     lumaMin: 40,
     lumaMax: 230,
-    glareMax: 0.12,
-    motionMax: 8,
-    autoCapture: true,
-    autoCaptureFrames: 4,
-    edgeDetection: true,   // OpenCV.js + jscanify: detect receipt edges + deskew
-    minQuadArea: 0.12,     // detected quad must cover >=12% of the frame to count
+    glareMax: 0.14,
+    edgeDetection: true,   // OpenCV.js: detect receipt edges + deskew
+    minQuadArea: 0.12,
+    edgeStrength: 1.6,     // a column's gradient must exceed mean * this to be an edge
+    bottomDrop: 0.6,       // row brightness < receiptMean * this => background (edge)
     pollIntervalMs: 2000,
     maxPolls: 60,
     userId: "demo-user",
     endpoints: { uploadUrl: "/aws/get-upload-url", status: "/aws/analyze-status" },
-    // CDN source for the (lazy-loaded) OpenCV.js WASM build (~8 MB).
     opencvUrl: "https://docs.opencv.org/4.8.0/opencv.js",
   };
 
-  const ACCENT_SEARCH = "#F5B301";
-  const ACCENT_READY = "#22c55e";
+  const AMBER = "#F5B301";
+  const GREEN = "#22c55e";
 
   class ReceiptCaptureSDK {
     constructor(opts = {}) {
@@ -67,15 +59,12 @@
       this._listeners = {};
       this._ui = null;
       this._loopTimer = null;
-      this._prevLuma = null;
-      this._goodStreak = 0;
-      this._cooldownUntil = 0;
       this._busy = false;
       this._torchOn = false;
       this._mode = "live";
-      this._cvReady = false;     // OpenCV.js loaded + initialized?
+      this._cvReady = false;
       this._cvLoading = null;
-      this._quad = null;         // last detected quad (in detection-canvas space)
+      this._edges = null;
     }
 
     /* ----------------------------------------------------------- events --- */
@@ -89,14 +78,10 @@
         this._rejectFlow = reject;
         try {
           this._buildUI();
-          // Lazy-load edge detection in the background — don't block the camera.
-          if (this.opts.edgeDetection) {
-            this._loadCV().catch(() => { this._cvReady = false; });  // silent fallback
-          }
+          if (this.opts.edgeDetection) this._loadCV().catch(() => { this._cvReady = false; });
           await this.start();
           this._startAnalysisLoop();
           this._setMode("live");
-          this._setCoach("Point at your receipt", false);
         } catch (err) {
           this._teardownUI();
           reject(err);
@@ -108,57 +93,44 @@
     _buildUI() {
       this._injectStyles();
       const root = document.createElement("div");
-      root.className = "rcap-root";
-      root.dataset.mode = "live";
-      root.style.setProperty("--rcap-accent", ACCENT_SEARCH);
+      root.className = "rcap-root"; root.dataset.mode = "live";
 
       const video = document.createElement("video");
       video.className = "rcap-video";
       video.setAttribute("playsinline", ""); video.setAttribute("autoplay", ""); video.setAttribute("muted", "");
       video.playsInline = true; video.autoplay = true; video.muted = true;
-      this.video = video;
-      root.appendChild(video);
+      this.video = video; root.appendChild(video);
 
-      // LIVE: framing guide
-      const frame = document.createElement("div");
-      frame.className = "rcap-frame";
-      frame.innerHTML =
-        '<span class="rcap-corner tl"></span><span class="rcap-corner tr"></span>' +
-        '<span class="rcap-edge top">Receipt edge</span>' +
-        '<span class="rcap-edge left">Receipt edge</span>' +
-        '<span class="rcap-edge right">Receipt edge</span>';
-      this.reticle = frame;
-      root.appendChild(frame);
+      // Per-edge guide rails (positioned/colored live).
+      const mkRail = (cls) => {
+        const r = document.createElement("div");
+        r.className = "rcap-rail " + cls;
+        r.innerHTML = '<span class="rcap-pill"><b class="badge">?</b><span class="lbl">Receipt edge</span></span>';
+        r.style.display = "none";
+        root.appendChild(r);
+        return r;
+      };
+      const rails = { left: mkRail("v left"), right: mkRail("v right"),
+                      bottom: mkRail("h bottom"), top: mkRail("h top") };
 
-      // LIVE: detected-receipt polygon overlay (snaps to the real edges).
-      const SVGNS = "http://www.w3.org/2000/svg";
-      const detect = document.createElementNS(SVGNS, "svg");
-      detect.setAttribute("class", "rcap-detect");
-      detect.setAttribute("preserveAspectRatio", "none");
-      const detectPoly = document.createElementNS(SVGNS, "polygon");
-      detectPoly.setAttribute("points", "");
-      detect.appendChild(detectPoly);
-      root.appendChild(detect);
+      // Hidden reticle: the capture region for the fixed-rect fallback crop.
+      const reticle = document.createElement("div");
+      reticle.className = "rcap-reticle";
+      root.appendChild(reticle);
+      this.reticle = reticle;
 
-      // LIVE (continuation): sliver of the previous section pinned to the top so
-      // the user can line up the next section, + a bottom line that only appears
-      // when the receipt's actual bottom edge is detected in view.
+      // Continuation sliver (tinted) of the previous section's bottom.
       const overlap = document.createElement("canvas");
       overlap.className = "rcap-overlap"; overlap.style.display = "none";
       root.appendChild(overlap);
-      const bottomline = document.createElement("div");
-      bottomline.className = "rcap-bottomline"; bottomline.style.display = "none";
-      bottomline.innerHTML = '<span class="rcap-edge bottom">Receipt edge</span>';
-      root.appendChild(bottomline);
 
-      // REVIEW: frozen still + field checklist (occupies the same framed area)
+      // Frozen still (review) + field checklist
       const still = document.createElement("img");
       still.className = "rcap-still"; still.alt = "Captured section";
       root.appendChild(still);
       const checklist = document.createElement("div");
       checklist.className = "rcap-checklist";
-      checklist.innerHTML =
-        '<span><b>?</b> Store</span><span><b>?</b> Date/Time</span><span><b>?</b> Total</span>';
+      checklist.innerHTML = '<span><b>?</b> Store</span><span><b>?</b> Date/Time</span><span><b>?</b> Total</span>';
       root.appendChild(checklist);
 
       // Top bar
@@ -174,12 +146,11 @@
         '</div>';
       root.appendChild(top);
 
-      // Coaching toast (LIVE)
+      // Lighting coach (only shown for dark/glare problems)
       const coach = document.createElement("div");
-      coach.className = "rcap-coach";
-      root.appendChild(coach);
+      coach.className = "rcap-coach"; root.appendChild(coach);
 
-      // Persistent reassurance for long receipts (LIVE only)
+      // Long-receipt hint (live)
       const hint = document.createElement("div");
       hint.className = "rcap-hint";
       hint.textContent = "Have a long receipt? You can add more sections next.";
@@ -190,14 +161,14 @@
       help.className = "rcap-help-panel"; help.hidden = true;
       help.innerHTML =
         '<div class="rcap-help-card"><h3>Capturing your receipt</h3>' +
-        '<ul><li>Fill the frame — get the whole receipt inside the brackets.</li>' +
-        '<li>Make sure the <b>store name, date, and total</b> are readable.</li>' +
-        '<li>Flatten it on a dark, non-shiny surface; avoid glare.</li>' +
-        '<li>Long receipt? Use <b>Add section</b> to capture it top to bottom.</li></ul>' +
+        '<ul><li>Lay it on a dark, non-shiny surface for the best edge detection.</li>' +
+        '<li>The side edges turn <b>green ✓</b> when detected; tap the button to capture.</li>' +
+        '<li>Long receipt? Capture the top, tap <b>Add section</b>, then line the next part up with the highlighted sliver.</li>' +
+        '<li>The <b>bottom edge</b> turns green when the end of the receipt is in view.</li></ul>' +
         '<button class="rcap-btn-solid rcap-help-close">Got it</button></div>';
       root.appendChild(help);
 
-      // Bottom: LIVE shutter row + REVIEW actions
+      // Bottom controls
       const bottom = document.createElement("div");
       bottom.className = "rcap-bottom";
       bottom.innerHTML =
@@ -208,7 +179,6 @@
         '</div>';
       root.appendChild(bottom);
 
-      // Processing overlay
       const proc = document.createElement("div");
       proc.className = "rcap-proc"; proc.hidden = true;
       proc.innerHTML = '<div class="rcap-spin"></div><div class="rcap-proc-msg">Uploading…</div>';
@@ -216,12 +186,10 @@
 
       document.body.appendChild(root);
       this._ui = {
-        root, frame, detect, detectPoly, overlap, bottomline, still, checklist, coach, help, proc,
-        dot: top.querySelector(".rcap-dot"),
-        count: top.querySelector(".rcap-count"),
+        root, rails, overlap, still, checklist, coach, help, proc,
+        dot: top.querySelector(".rcap-dot"), count: top.querySelector(".rcap-count"),
         flash: top.querySelector(".rcap-flash"),
-        shutter: bottom.querySelector(".rcap-shutter"),
-        procMsg: proc.querySelector(".rcap-proc-msg"),
+        shutter: bottom.querySelector(".rcap-shutter"), procMsg: proc.querySelector(".rcap-proc-msg"),
       };
 
       top.querySelector(".rcap-close").onclick = () => this._cancel();
@@ -247,64 +215,50 @@
 .rcap-root{position:fixed;inset:0;z-index:2147483000;background:#000;overflow:hidden;
   font-family:Manrope,system-ui,-apple-system,sans-serif;color:#fff;-webkit-user-select:none;user-select:none}
 .rcap-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
-/* Open-bottomed guide: top edge + full-height side rails (no bottom edge) so a
-   long receipt can extend past the bottom of the screen. Rails use the accent
-   color so they turn green when a receipt is detected. */
-.rcap-frame{position:absolute;top:11%;bottom:12%;left:50%;transform:translateX(-50%);
-  width:min(86vw,420px);
-  border:2px solid var(--rcap-accent);border-bottom:0;border-radius:8px 8px 0 0;
-  pointer-events:none;transition:border-color .25s}
-.rcap-corner{position:absolute;width:26px;height:26px;border:3px solid var(--rcap-accent);transition:border-color .25s}
-.rcap-corner.tl{top:-2px;left:-2px;border-right:0;border-bottom:0;border-radius:8px 0 0 0}
-.rcap-corner.tr{top:-2px;right:-2px;border-left:0;border-bottom:0;border-radius:0 8px 0 0}
-.rcap-edge{position:absolute;background:var(--rcap-accent);color:#1a1a1a;font-size:11px;font-weight:700;
-  padding:3px 9px;border-radius:999px;white-space:nowrap;transition:background-color .25s}
-.rcap-edge.top{top:-12px;left:50%;transform:translateX(-50%)}
-.rcap-edge.left{left:-11px;top:50%;transform:translateY(-50%) rotate(180deg);writing-mode:vertical-rl}
-.rcap-edge.right{right:-11px;top:50%;transform:translateY(-50%);writing-mode:vertical-rl}
-.rcap-overlap{position:absolute;top:11%;left:50%;transform:translateX(-50%);
-  width:min(86vw,420px);height:62px;object-fit:cover;object-position:bottom;z-index:3;
-  border-bottom:2px dashed #22c55e;opacity:.9}
-.rcap-overlap::after{content:''}
-.rcap-bottomline{position:absolute;left:50%;transform:translateX(-50%);width:min(86vw,420px);
-  height:0;border-top:3px solid var(--rcap-accent);z-index:3;transition:top .1s}
-.rcap-bottomline .rcap-edge.bottom{position:absolute;left:50%;top:4px;transform:translateX(-50%)}
-.rcap-root[data-mode="review"] .rcap-overlap,
-.rcap-root[data-mode="review"] .rcap-bottomline{display:none !important}
-/* During a continuation section, the overlap sliver is the top reference, so
-   hide the receipt's top edge label + top corner brackets. */
-.rcap-root[data-cont="1"] .rcap-edge.top,
-.rcap-root[data-cont="1"] .rcap-corner{display:none}
-.rcap-detect{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;opacity:0;transition:opacity .15s}
-.rcap-detect polygon{fill:rgba(34,197,94,.12);stroke:var(--rcap-accent);stroke-width:3;
-  stroke-linejoin:round;vector-effect:non-scaling-stroke}
-.rcap-still{position:absolute;top:11%;left:50%;transform:translateX(-50%);
-  width:min(86vw,420px);height:77%;object-fit:contain;border-radius:6px;background:#111}
-.rcap-hint{position:absolute;left:50%;bottom:118px;transform:translateX(-50%);
-  background:rgba(0,0,0,.5);color:#fff;font-size:13px;font-weight:600;padding:7px 14px;border-radius:999px;
-  max-width:88vw;text-align:center;z-index:3}
-.rcap-root[data-mode="review"] .rcap-hint{display:none}
-.rcap-checklist{position:absolute;left:50%;top:80%;transform:translateX(-50%);display:flex;gap:14px;
+.rcap-reticle{position:absolute;top:9%;bottom:11%;left:8%;right:8%;pointer-events:none}
+/* per-edge rails */
+.rcap-rail{position:absolute;z-index:3;pointer-events:none}
+.rcap-rail.v{top:9%;bottom:0;width:0;border-left:3px solid ${AMBER}}
+.rcap-rail.v.on{border-left-color:${GREEN}}
+.rcap-rail.h{height:0;border-top:3px solid ${GREEN}}
+.rcap-pill{position:absolute;background:${AMBER};color:#1a1a1a;font-size:11px;font-weight:700;
+  padding:5px 9px;border-radius:999px;white-space:nowrap;display:flex;align-items:center;gap:5px}
+.rcap-rail.on .rcap-pill,.rcap-rail.h .rcap-pill{background:${GREEN};color:#fff}
+.rcap-pill .badge{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;
+  background:rgba(0,0,0,.18);font-size:10px;line-height:1}
+.rcap-rail.v .rcap-pill{top:42%;writing-mode:vertical-rl}
+.rcap-rail.v.left .rcap-pill{left:5px;transform:rotate(180deg)}
+.rcap-rail.v.right .rcap-pill{right:5px}
+.rcap-rail.h .rcap-pill{left:50%;top:6px;transform:translateX(-50%)}
+/* continuation sliver */
+.rcap-overlap{position:absolute;top:9%;left:8%;right:8%;height:60px;object-fit:cover;object-position:bottom;
+  z-index:4;border-bottom:2px dashed ${GREEN};filter:hue-rotate(280deg) saturate(1.4);opacity:.92}
+/* review still + checklist */
+.rcap-still{position:absolute;top:9%;left:8%;right:8%;height:78%;object-fit:contain;border-radius:6px;background:#111}
+.rcap-checklist{position:absolute;left:50%;top:82%;transform:translateX(-50%);display:flex;gap:14px;
   background:rgba(15,15,18,.82);padding:9px 14px;border-radius:12px;font-size:14px;font-weight:600;white-space:nowrap}
 .rcap-checklist b{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;
-  background:var(--rcap-accent);color:#1a1a1a;font-size:11px;margin-right:5px;vertical-align:middle}
+  background:${AMBER};color:#1a1a1a;font-size:11px;margin-right:5px;vertical-align:middle}
 .rcap-top{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;
-  padding:max(14px,env(safe-area-inset-top,14px)) 14px 14px;background:linear-gradient(#000a,#0000);z-index:4}
+  padding:max(14px,env(safe-area-inset-top,14px)) 14px 14px;background:linear-gradient(#000a,#0000);z-index:6}
 .rcap-actions{display:flex;gap:6px;align-items:center}
 .rcap-btn{width:42px;height:42px;border:0;background:rgba(0,0,0,.35);color:#fff;border-radius:999px;
   font-size:18px;cursor:pointer;display:grid;place-items:center}
 .rcap-btn[hidden]{display:none}
-.rcap-flash.on{background:#F5B301;color:#1a1a1a}
+.rcap-flash.on{background:${AMBER};color:#1a1a1a}
 .rcap-retake{border:0;background:transparent;color:#fff;font-family:inherit;font-size:16px;font-weight:700;cursor:pointer;padding:8px}
 .rcap-title{display:flex;align-items:center;gap:8px;font-weight:800;font-size:17px}
 .rcap-dot{width:10px;height:10px;border-radius:50%;background:#888;transition:.2s}
-.rcap-dot.ready{background:#22c55e;box-shadow:0 0 10px 2px #22c55eaa}
-.rcap-coach{position:absolute;top:46%;left:50%;transform:translate(-50%,-50%);
+.rcap-dot.ready{background:${GREEN};box-shadow:0 0 10px 2px ${GREEN}aa}
+.rcap-coach{position:absolute;top:44%;left:50%;transform:translate(-50%,-50%);
   background:rgba(15,15,18,.82);padding:12px 18px;border-radius:14px;font-size:16px;font-weight:600;
   max-width:80%;text-align:center;opacity:0;transition:opacity .2s;pointer-events:none;z-index:3}
 .rcap-coach.show{opacity:1}
+.rcap-hint{position:absolute;left:50%;bottom:118px;transform:translateX(-50%);
+  background:rgba(0,0,0,.5);color:#fff;font-size:13px;font-weight:600;padding:7px 14px;border-radius:999px;
+  max-width:88vw;text-align:center;z-index:3}
 .rcap-bottom{position:absolute;left:0;right:0;bottom:0;padding:14px 14px max(20px,env(safe-area-inset-bottom,20px));
-  background:linear-gradient(#0000,#000a);z-index:4}
+  background:linear-gradient(#0000,#000a);z-index:6}
 .rcap-shutter-row{display:flex;align-items:center;justify-content:center}
 .rcap-shutter{width:74px;height:74px;border-radius:50%;background:#fff;border:5px solid #1DB0C9;cursor:pointer;transition:transform .1s}
 .rcap-shutter:active{transform:scale(.92)}
@@ -316,20 +270,22 @@
 .rcap-root[data-mode="live"] .rcap-checklist,
 .rcap-root[data-mode="live"] .rcap-review-actions,
 .rcap-root[data-mode="live"] .rcap-retake{display:none}
-.rcap-root[data-mode="review"] .rcap-frame,
-.rcap-root[data-mode="review"] .rcap-detect,
+.rcap-root[data-mode="review"] .rcap-rail,
+.rcap-root[data-mode="review"] .rcap-overlap,
+.rcap-root[data-mode="review"] .rcap-reticle,
 .rcap-root[data-mode="review"] .rcap-coach,
+.rcap-root[data-mode="review"] .rcap-hint,
 .rcap-root[data-mode="review"] .rcap-shutter-row,
 .rcap-root[data-mode="review"] .rcap-flash,
 .rcap-root[data-mode="review"] .rcap-help{display:none}
 .rcap-flash-anim{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:5}
-.rcap-help-panel{position:absolute;inset:0;background:rgba(0,0,0,.7);display:grid;place-items:center;z-index:6;padding:24px}
+.rcap-help-panel{position:absolute;inset:0;background:rgba(0,0,0,.7);display:grid;place-items:center;z-index:7;padding:24px}
 .rcap-help-panel[hidden]{display:none}
 .rcap-help-card{background:#fff;color:#173D53;border-radius:18px;padding:22px;max-width:340px}
 .rcap-help-card h3{margin:0 0 12px;font-size:18px}
 .rcap-help-card ul{margin:0 0 18px;padding-left:18px;font-size:14px;line-height:1.5;color:#444}
 .rcap-btn-solid{width:100%;border:0;border-radius:999px;padding:13px;background:#2269B5;color:#fff;font-weight:700;font-size:15px;cursor:pointer;font-family:inherit}
-.rcap-proc{position:absolute;inset:0;background:rgba(0,0,0,.78);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:7}
+.rcap-proc{position:absolute;inset:0;background:rgba(0,0,0,.78);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:8}
 .rcap-proc[hidden]{display:none}
 .rcap-spin{width:42px;height:42px;border:4px solid #fff3;border-top-color:#1DB0C9;border-radius:50%;animation:rcap-spin .8s linear infinite}
 .rcap-proc-msg{font-size:16px;font-weight:600}
@@ -339,22 +295,23 @@
       document.head.appendChild(style);
     }
 
-    /* ------------------------------------------------------- mode + coach -- */
+    /* ------------------------------------------------------- mode + UI ---- */
     _setMode(mode) {
       this._mode = mode;
       if (this._ui) this._ui.root.dataset.mode = mode;
-      if (mode === "live") {
-        // Re-arm: require fresh framing before auto-capture fires again.
-        this._prevLuma = null; this._goodStreak = 0;
-        this._cooldownUntil = Date.now() + 1800;
-        this._setCoach("Point at your receipt", false);
-      }
       this._showOverlap();
       this._updateCounter();
     }
-
-    /** Pin a sliver of the previous section's bottom to the top of the live view
-     *  so the user can line the next section up with it (for clean stitching). */
+    _updateCounter() {
+      if (!this._ui) return;
+      const n = this._mode === "review" ? this.segments.length : this.segments.length + 1;
+      this._ui.count.textContent = "Photo " + Math.max(1, n);
+    }
+    _coach(msg) {
+      if (!this._ui) return;
+      const c = this._ui.coach;
+      if (msg) { c.textContent = msg; c.classList.add("show"); } else { c.classList.remove("show"); }
+    }
     _showOverlap() {
       if (!this._ui) return;
       const ov = this._ui.overlap;
@@ -362,41 +319,13 @@
         const last = this.segments[this.segments.length - 1];
         const sliceH = Math.max(1, Math.round(last.height * 0.18));
         ov.width = last.width; ov.height = sliceH;
-        ov.getContext("2d").drawImage(last, 0, last.height - sliceH, last.width, sliceH,
-          0, 0, last.width, sliceH);
+        ov.getContext("2d").drawImage(last, 0, last.height - sliceH, last.width, sliceH, 0, 0, last.width, sliceH);
         ov.style.display = "block";
-        this._ui.root.dataset.cont = "1";   // continuation: top is the overlap seam
+        this._ui.root.dataset.cont = "1";
       } else {
         ov.style.display = "none";
         this._ui.root.dataset.cont = "";
       }
-    }
-
-    _updateBottomLine(edges, cap) {
-      const bl = this._ui && this._ui.bottomline;
-      if (!bl) return;
-      if (edges && edges.bottomY != null && cap) {
-        bl.style.top = ((edges.bottomY / cap.height) * 100) + "%";
-        bl.style.display = "block";
-      } else {
-        bl.style.display = "none";
-      }
-    }
-    _setAccent(ready) {
-      if (!this._ui) return;
-      this._ui.root.style.setProperty("--rcap-accent", ready ? ACCENT_READY : ACCENT_SEARCH);
-      this._ui.dot.classList.toggle("ready", !!ready);
-    }
-    _setCoach(msg, ready) {
-      if (!this._ui) return;
-      const c = this._ui.coach;
-      if (msg) { c.textContent = msg; c.classList.add("show"); } else { c.classList.remove("show"); }
-      this._setAccent(ready);
-    }
-    _updateCounter() {
-      if (!this._ui) return;
-      const n = this._mode === "review" ? this.segments.length : this.segments.length + 1;
-      this._ui.count.textContent = "Photo " + Math.max(1, n);
     }
     _flashAnim() {
       const f = document.createElement("div");
@@ -410,75 +339,57 @@
     _startAnalysisLoop() {
       this._loopTimer = setInterval(() => {
         if (this._busy || this._mode !== "live" || !this.video || !this.video.videoWidth) return;
-        // One cover-cropped canvas (matches what's shown on screen) feeds both
-        // the lighting/steadiness checks and edge detection.
         const cap = this._coverCropCanvas(240);
         if (!cap) return;
         let data;
         try { data = cap.getContext("2d").getImageData(0, 0, cap.width, cap.height).data; }
         catch (_) { return; }
-        let sum = 0, glare = 0, motion = 0;
-        const n = cap.width * cap.height, luma = new Uint8Array(n);
-        for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+        let sum = 0, glare = 0; const n = cap.width * cap.height;
+        for (let i = 0; i < data.length; i += 4) {
           const y = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-          luma[p] = y; sum += y; if (y > 245) glare++;
+          sum += y; if (y > 245) glare++;
         }
         const mean = sum / n, glareFrac = glare / n;
-        if (this._prevLuma && this._prevLuma.length === n) {
-          let d = 0; for (let p = 0; p < n; p++) d += Math.abs(luma[p] - this._prevLuma[p]); motion = d / n;
-        } else { motion = 999; }
-        this._prevLuma = luma;
 
-        // Detection: prefer a full quad (short receipt fully in view); otherwise
-        // look for the two vertical side edges (long receipt running off-frame).
-        let quad = null, edges = null, detected = false;
-        if (this._cvReady && this.opts.edgeDetection) {
-          quad = this._detectQuad(cap);
-          if (quad && quad.areaFrac >= this.opts.minQuadArea) detected = true;
-          else { quad = null; edges = this._detectSideEdges(cap); if (edges) detected = true; }
-        }
-        this._quad = quad; this._edges = edges;
-        this._updateDetectOverlay(quad);   // snapping polygon only for a full quad
-        this._updateBottomLine(edges, cap); // bottom line only when the end is in view
-        this._evaluate(mean, glareFrac, motion, detected);
-      }, 220);
+        const edges = (this._cvReady && this.opts.edgeDetection) ? this._detectEdges(cap) : null;
+        this._edges = edges;
+        this._updateEdges(edges, cap);
+
+        // Lighting-only coaching (capture is manual — no "hold still" / auto-fire).
+        if (mean < this.opts.lumaMin) this._coach("Too dark — add light or tap ⚡");
+        else if (mean > this.opts.lumaMax) this._coach("Too bright — reduce light");
+        else if (glareFrac > this.opts.glareMax) this._coach("Glare — tilt the receipt");
+        else this._coach(null);
+
+        if (this._ui) this._ui.dot.classList.toggle("ready", !!(edges && edges.left.on && edges.right.on));
+      }, 200);
     }
 
-    _evaluate(mean, glareFrac, motion, detected) {
-      const o = this.opts;
-      const useDet = this._cvReady && o.edgeDetection;
-      let msg, ready = false;
-      if (useDet && !detected) msg = "Line up the receipt edges in the box";
-      else if (mean < o.lumaMin) msg = "Too dark — add light or tap ⚡";
-      else if (mean > o.lumaMax) msg = "Too bright — reduce light";
-      else if (glareFrac > o.glareMax) msg = "Glare detected — tilt the receipt";
-      else if (motion > o.motionMax) msg = "Hold steady…";
-      else {
-        ready = true;
-        msg = (useDet && this._edges && this._edges.bottomY != null) ? "Bottom of receipt in view — hold still"
-            : (useDet ? "Receipt detected — hold still" : "Looks good — hold still");
-      }
-      this._setCoach(msg, ready);
-      if (ready) this._goodStreak++; else this._goodStreak = 0;
-      if (o.autoCapture && ready && this._goodStreak >= o.autoCaptureFrames && Date.now() > this._cooldownUntil) {
-        this._goodStreak = 0;
-        this._doCapture(true);
-      }
-    }
+    /** Position + color the per-edge rails from a detection result. */
+    _updateEdges(edges, cap) {
+      const u = this._ui; if (!u) return;
+      const cont = this.segments.length > 0 && this._mode === "live";
+      if (!edges || !cap) { Object.values(u.rails).forEach((r) => (r.style.display = "none")); return; }
+      const sx = global.innerWidth / cap.width, sy = global.innerHeight / cap.height;
+      const setBadge = (r, on) => { r.classList.toggle("on", on); r.querySelector(".badge").textContent = on ? "✓" : "?"; };
 
-    _updateDetectOverlay(quad) {
-      if (!this._ui) return;
-      const svg = this._ui.detect, poly = this._ui.detectPoly;
-      if (quad && quad.areaFrac >= this.opts.minQuadArea) {
-        const c = quad.c;
-        svg.setAttribute("viewBox", `0 0 ${quad.w} ${quad.h}`);
-        poly.setAttribute("points",
-          [c.topLeftCorner, c.topRightCorner, c.bottomRightCorner, c.bottomLeftCorner]
-            .map((p) => `${p.x},${p.y}`).join(" "));
-        svg.style.opacity = "1";
-      } else {
-        svg.style.opacity = "0";
-      }
+      // Vertical side rails always show (green ✓ if detected, amber ? if not).
+      u.rails.left.style.left = (edges.left.x * sx) + "px"; setBadge(u.rails.left, edges.left.on); u.rails.left.style.display = "block";
+      u.rails.right.style.left = (edges.right.x * sx) + "px"; setBadge(u.rails.right, edges.right.on); u.rails.right.style.display = "block";
+
+      const x1 = edges.left.x * sx, x2 = edges.right.x * sx;
+      // Bottom edge only when the receipt's end is actually in view.
+      if (edges.bottom.on) {
+        u.rails.bottom.style.top = (edges.bottom.y * sy) + "px";
+        u.rails.bottom.style.left = x1 + "px"; u.rails.bottom.style.width = (x2 - x1) + "px";
+        u.rails.bottom.querySelector(".badge").textContent = "✓"; u.rails.bottom.style.display = "block";
+      } else u.rails.bottom.style.display = "none";
+      // Top edge only on the first section (sliver replaces it on continuation).
+      if (!cont && edges.top.on) {
+        u.rails.top.style.top = (edges.top.y * sy) + "px";
+        u.rails.top.style.left = x1 + "px"; u.rails.top.style.width = (x2 - x1) + "px";
+        u.rails.top.querySelector(".badge").textContent = "✓"; u.rails.top.style.display = "block";
+      } else u.rails.top.style.display = "none";
     }
 
     /* ------------------------------------------------ edge detection (CV) -- */
@@ -493,7 +404,7 @@
       this._cvLoading = (async () => {
         if (!(global.cv && global.cv.Mat)) {
           await loadScript(this.opts.opencvUrl);
-          await new Promise((res, rej) => {   // OpenCV WASM finishes init after script load
+          await new Promise((res, rej) => {
             const t0 = Date.now();
             (function wait() {
               if (global.cv && global.cv.Mat) return res();
@@ -509,36 +420,95 @@
       return this._cvLoading;
     }
 
-    /** Order 4 unsorted points into tl/tr/br/bl using sum/diff of coordinates. */
-    _orderCorners(pts) {
-      const sum = (p) => p.x + p.y, diff = (p) => p.y - p.x;
-      const bySum = [...pts].sort((a, b) => sum(a) - sum(b));
-      const byDiff = [...pts].sort((a, b) => diff(a) - diff(b));
-      return {
-        topLeftCorner: bySum[0], bottomRightCorner: bySum[3],
-        topRightCorner: byDiff[0], bottomLeftCorner: byDiff[3],
+    /** Detect receipt edges by the BRIGHTNESS BAND (receipt is lighter than the
+     *  background) — robust to interior text, which gradient methods mistake for
+     *  edges. An edge is "on" (detected/green) only when the bright band starts
+     *  or ends INSIDE the frame; if the band touches a border, that edge is
+     *  off-screen (amber ?). Returns {left,right,top,bottom (each {x|y,on}),w,h}.*/
+    _detectEdges(canvas) {
+      if (!this._cvReady || !global.cv) return null;
+      const cv = global.cv;
+      let src, gray, colM, rowM;
+      const band = (arr, len, lo) => {     // first/last index above a threshold
+        let lo2 = 1e9, hi2 = -1e9;
+        for (let i = 0; i < len; i++) { const v = arr[i]; if (v < lo2) lo2 = v; if (v > hi2) hi2 = v; }
+        if (hi2 - lo2 < 12) return null;   // no contrast -> no band
+        const thr = lo2 + (hi2 - lo2) * 0.45;
+        let s = -1, e = -1;
+        for (let i = 0; i < len; i++) if (arr[i] > thr) { if (s < 0) s = i; e = i; }
+        return s < 0 ? null : { s, e };
       };
+      try {
+        src = cv.imread(canvas); gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+        cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+        const w = gray.cols, h = gray.rows;
+
+        colM = new cv.Mat(); cv.reduce(gray, colM, 0, cv.REDUCE_AVG, cv.CV_32F);   // 1 x w
+        const cb = band(colM.data32F, w);
+        if (!cb || cb.e - cb.s < w * 0.12) return null;
+        const leftOn = cb.s > w * 0.03, rightOn = cb.e < w * 0.97;
+        const left = { x: leftOn ? cb.s : Math.round(w * 0.08), on: leftOn };
+        const right = { x: rightOn ? cb.e : Math.round(w * 0.92), on: rightOn };
+
+        // Row brightness within the detected column band -> top/bottom edges.
+        let top = { y: 0, on: false }, bottom = { y: h, on: false };
+        const bx = Math.max(0, cb.s), bw = Math.max(4, Math.min(w - bx, cb.e - cb.s));
+        const roi = gray.roi(new cv.Rect(bx, 0, bw, h));
+        rowM = new cv.Mat(); cv.reduce(roi, rowM, 1, cv.REDUCE_AVG, cv.CV_32F); roi.delete();
+        const rb = band(rowM.data32F, h);
+        if (rb) {
+          if (rb.s > h * 0.03) top = { y: rb.s, on: true };
+          if (rb.e < h * 0.97) bottom = { y: rb.e, on: true };
+        }
+        return { left, right, top, bottom, w, h };
+      } catch (_) { return null; }
+      finally { [src, gray, colM, rowM].forEach((m) => { if (m && m.delete) { try { m.delete(); } catch (_) {} } }); }
     }
 
-    /** Draw the on-screen (cover-cropped) region into a canvas at most maxW wide. */
-    _coverCropCanvas(maxW) {
-      const v = this.video;
-      if (!v || !v.videoWidth) return null;
-      const VW = global.innerWidth, VH = global.innerHeight;
-      const scaleCover = Math.max(VW / v.videoWidth, VH / v.videoHeight);
-      const cropW = VW / scaleCover, cropH = VH / scaleCover;
-      const cropX = (v.videoWidth - cropW) / 2, cropY = (v.videoHeight - cropH) / 2;
-      const outW = Math.max(1, Math.min(maxW, Math.round(cropW)));
-      const outH = Math.max(1, Math.round(outW * cropH / cropW));
-      const cv2 = document.createElement("canvas");
-      cv2.width = outW; cv2.height = outH;
-      cv2.getContext("2d").drawImage(v, cropX, cropY, cropW, cropH, 0, 0, outW, outH);
-      return cv2;
+    /* ---------------------------------------------------- capture actions -- */
+    _manualCapture() { if (this._mode === "live" && !this._busy) this._doCapture(); }
+
+    _doCapture() {
+      try {
+        let ok = false;
+        if (this._cvReady && this.opts.edgeDetection) {
+          ok = this._captureDeskewed();      // short receipt fully in frame
+          if (!ok) ok = this._captureStrip(); // long receipt: strip between side edges
+        }
+        if (!ok) this.capture();             // fixed-rect fallback
+        this._flashAnim();
+        this._enterReview();
+      } catch (err) { this._coach(err.message); }
     }
 
-    /** Detect the largest receipt-like quadrilateral in a canvas via
-     *  grayscale -> blur -> Canny -> contours -> 4-point convex approximation.
-     *  Returns {c, areaFrac, w, h} (c = ordered corners) or null. */
+    /** Vertical strip between the side edges, cropped to the bottom edge when
+     *  it's in view (final section), else full height. */
+    _captureStrip() {
+      const hi = this._coverCropCanvas(1600);
+      if (!hi) return false;
+      const e = this._detectEdges(hi);
+      if (!e) return false;
+      const pad = Math.round(hi.width * 0.01);
+      const x = Math.max(0, e.left.x - pad);
+      const w = Math.min(hi.width - x, (e.right.x - e.left.x) + pad * 2);
+      if (w < hi.width * 0.15) return false;
+      const top = e.top.on ? Math.max(0, e.top.y - pad) : 0;
+      const bottom = e.bottom.on ? Math.min(hi.height, e.bottom.y + pad) : hi.height;
+      const h = bottom - top; if (h < 40) return false;
+      const out = document.createElement("canvas");
+      out.width = Math.round(w); out.height = Math.round(h);
+      out.getContext("2d").drawImage(hi, x, top, w, h, 0, 0, out.width, out.height);
+      const ctx = out.getContext("2d");
+      const luminance = this._screenAndGrayscale(ctx, out);
+      if (luminance < this.opts.lumaMin) throw new RangeError(`Too dark (${Math.round(luminance)})`);
+      if (luminance > this.opts.lumaMax) throw new RangeError(`Too bright (${Math.round(luminance)})`);
+      this.segments.push(out);
+      this._emit("segment", { count: this.segments.length, luminance, strip: true });
+      return true;
+    }
+
+    /** Detect the largest 4-point convex quad and perspective de-warp it. */
     _detectQuad(canvas) {
       if (!this._cvReady || !global.cv) return null;
       const cv = global.cv;
@@ -549,124 +519,36 @@
         cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
         cv.Canny(gray, edged, 50, 150);
         k = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
-        cv.dilate(edged, edged, k);   // close small gaps in the edge outline
+        cv.dilate(edged, edged, k);
         contours = new cv.MatVector(); hier = new cv.Mat();
         cv.findContours(edged, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
         let best = null, bestArea = 0;
         for (let i = 0; i < contours.size(); i++) {
-          const cnt = contours.get(i);
-          const peri = cv.arcLength(cnt, true);
-          const approx = new cv.Mat();
-          cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+          const cnt = contours.get(i), peri = cv.arcLength(cnt, true);
+          const approx = new cv.Mat(); cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
           if (approx.rows === 4 && cv.isContourConvex(approx)) {
             const a = cv.contourArea(approx);
-            if (a > bestArea) {
-              bestArea = a;
-              const pts = [];
-              for (let j = 0; j < 4; j++) pts.push({ x: approx.data32S[j * 2], y: approx.data32S[j * 2 + 1] });
-              best = pts;
-            }
+            if (a > bestArea) { bestArea = a; const pts = []; for (let j = 0; j < 4; j++) pts.push({ x: approx.data32S[j * 2], y: approx.data32S[j * 2 + 1] }); best = pts; }
           }
           approx.delete(); cnt.delete();
         }
         if (!best) return null;
         const areaFrac = bestArea / (canvas.width * canvas.height);
         if (!(areaFrac > 0) || areaFrac > 0.999) return null;
-        return { c: this._orderCorners(best), areaFrac, w: canvas.width, h: canvas.height };
+        return { c: this._orderCorners(best), areaFrac };
       } catch (_) { return null; }
-      finally {
-        [src, gray, edged, k, contours, hier].forEach((m) => { if (m && m.delete) { try { m.delete(); } catch (_) {} } });
-      }
+      finally { [src, gray, edged, k, contours, hier].forEach((m) => { if (m && m.delete) { try { m.delete(); } catch (_) {} } }); }
     }
-
-    /** Detect the receipt's left/right vertical edges via a column profile of
-     *  horizontal-gradient (Sobel-x) energy. Works for long receipts that run
-     *  off the top/bottom of the frame. Returns {leftX, rightX, w, h} or null. */
-    _detectSideEdges(canvas) {
-      if (!this._cvReady || !global.cv) return null;
-      const cv = global.cv;
-      let src, gray, gx, col;
-      try {
-        src = cv.imread(canvas); gray = new cv.Mat();
-        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-        cv.GaussianBlur(gray, gray, new cv.Size(3, 3), 0);
-        gx = new cv.Mat(); cv.Sobel(gray, gx, cv.CV_32F, 1, 0, 3);
-        const absG = new cv.Mat(); cv.convertScaleAbs(gx, absG); gx.delete(); gx = absG;
-        col = new cv.Mat(); cv.reduce(gx, col, 0, cv.REDUCE_AVG, cv.CV_32F);  // 1 x w avg
-        const w = canvas.width, h = canvas.height;
-        const prof = new Float32Array(w);
-        let sum = 0;
-        for (let i = 0; i < w; i++) { prof[i] = col.data32F[i]; sum += prof[i]; }
-        const mean = sum / w || 1;
-        const m0 = Math.floor(w * 0.04), mid = Math.floor(w * 0.5), m3 = Math.ceil(w * 0.96);
-        let lX = -1, lV = 0; for (let i = m0; i < mid; i++) if (prof[i] > lV) { lV = prof[i]; lX = i; }
-        let rX = -1, rV = 0; for (let i = mid; i < m3; i++) if (prof[i] > rV) { rV = prof[i]; rX = i; }
-        if (lX < 0 || rX < 0) return null;
-        if (lV < mean * 1.6 || rV < mean * 1.6) return null;   // edges not pronounced enough
-        if (rX - lX < w * 0.22) return null;                   // detected band too narrow
-
-        // Bottom edge: within the receipt's column band, find the row where
-        // brightness drops from receipt (light) to background (dark). null if
-        // the receipt runs off the bottom of the frame (no end in view).
-        let bottomY = null;
-        try {
-          const bx = Math.max(0, lX), bw = Math.min(w - bx, rX - lX);
-          if (bw > 4) {
-            const roi = gray.roi(new cv.Rect(bx, 0, bw, h));
-            const rowMean = new cv.Mat();
-            cv.reduce(roi, rowMean, 1, cv.REDUCE_AVG, cv.CV_32F);   // h x 1 (avg per row)
-            roi.delete();
-            const topN = Math.max(1, Math.floor(h * 0.30));
-            let s = 0; for (let y = 0; y < topN; y++) s += rowMean.data32F[y];
-            const receiptMean = s / topN, thr = receiptMean * 0.6;
-            for (let y = Math.floor(h * 0.35); y < h - 2; y++) {
-              if (rowMean.data32F[y] < thr && rowMean.data32F[y + 1] < thr && rowMean.data32F[y + 2] < thr) {
-                bottomY = y; break;
-              }
-            }
-            rowMean.delete();
-            if (bottomY != null && bottomY > h * 0.97) bottomY = null;  // basically off-frame
-          }
-        } catch (_) { bottomY = null; }
-
-        return { leftX: lX, rightX: rX, bottomY, w, h };
-      } catch (_) { return null; }
-      finally { [src, gray, gx, col].forEach((m) => { if (m && m.delete) { try { m.delete(); } catch (_) {} } }); }
+    _orderCorners(pts) {
+      const sum = (p) => p.x + p.y, diff = (p) => p.y - p.x;
+      const bySum = [...pts].sort((a, b) => sum(a) - sum(b));
+      const byDiff = [...pts].sort((a, b) => diff(a) - diff(b));
+      return { topLeftCorner: bySum[0], bottomRightCorner: bySum[3], topRightCorner: byDiff[0], bottomLeftCorner: byDiff[3] };
     }
-
-    /** Capture the vertical strip between the detected side edges, full frame
-     *  height (top of screen to bottom) — for long receipts. Returns true if a
-     *  segment was pushed, false otherwise. */
-    _captureStrip() {
-      const hi = this._coverCropCanvas(1600);
-      if (!hi) return false;
-      const e = this._detectSideEdges(hi);
-      if (!e) return false;
-      const pad = Math.round(hi.width * 0.01);
-      const x = Math.max(0, e.leftX - pad);
-      const w = Math.min(hi.width - x, (e.rightX - e.leftX) + pad * 2);
-      if (w < hi.width * 0.15) return false;
-      // Crop down to the detected bottom edge (last section), else full height.
-      const cropH = (e.bottomY != null) ? Math.min(hi.height, e.bottomY + pad * 2) : hi.height;
-      const out = document.createElement("canvas");
-      out.width = Math.round(w); out.height = cropH;
-      out.getContext("2d").drawImage(hi, x, 0, w, cropH, 0, 0, out.width, cropH);
-      const ctx = out.getContext("2d");
-      const luminance = this._screenAndGrayscale(ctx, out);
-      if (luminance < this.opts.lumaMin) throw new RangeError(`Too dark (${Math.round(luminance)})`);
-      if (luminance > this.opts.lumaMax) throw new RangeError(`Too bright (${Math.round(luminance)})`);
-      this.segments.push(out);
-      this._emit("segment", { count: this.segments.length, luminance, strip: true });
-      return true;
-    }
-
-    /** Capture using perspective de-warp from the detected quad. Returns true if
-     *  a segment was pushed, false if no usable quad (caller falls back). */
     _captureDeskewed() {
       if (!this._cvReady || !global.cv) return false;
       const cv = global.cv;
-      const cap = this._coverCropCanvas(1600);
-      if (!cap) return false;
+      const cap = this._coverCropCanvas(1600); if (!cap) return false;
       const det = this._detectQuad(cap);
       if (!det || det.areaFrac < this.opts.minQuadArea) return false;
       const c = det.c, d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -676,14 +558,10 @@
       let src, dst, sT, dT, M;
       try {
         src = cv.imread(cap); dst = new cv.Mat();
-        sT = cv.matFromArray(4, 1, cv.CV_32FC2, [
-          c.topLeftCorner.x, c.topLeftCorner.y, c.topRightCorner.x, c.topRightCorner.y,
-          c.bottomRightCorner.x, c.bottomRightCorner.y, c.bottomLeftCorner.x, c.bottomLeftCorner.y,
-        ]);
+        sT = cv.matFromArray(4, 1, cv.CV_32FC2, [c.topLeftCorner.x, c.topLeftCorner.y, c.topRightCorner.x, c.topRightCorner.y, c.bottomRightCorner.x, c.bottomRightCorner.y, c.bottomLeftCorner.x, c.bottomLeftCorner.y]);
         dT = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, W, 0, W, H, 0, H]);
         M = cv.getPerspectiveTransform(sT, dT);
-        cv.warpPerspective(src, dst, M, new cv.Size(W, H), cv.INTER_LINEAR,
-          cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
+        cv.warpPerspective(src, dst, M, new cv.Size(W, H), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
         cv.imshow(out, dst);
       } catch (_) { return false; }
       finally { [src, dst, sT, dT, M].forEach((m) => { if (m && m.delete) { try { m.delete(); } catch (_) {} } }); }
@@ -696,124 +574,7 @@
       return true;
     }
 
-    /* ---------------------------------------------------- capture actions -- */
-    _manualCapture() { if (this._mode === "live") this._doCapture(false); }
-
-    _doCapture(auto) {
-      if (this._busy || this._mode !== "live") return;
-      try {
-        // 1) full-quad de-warp (short receipt), 2) vertical strip between the
-        // side edges (long receipt), 3) fixed-rect crop of the guide box.
-        let ok = false;
-        if (this._cvReady && this.opts.edgeDetection) {
-          ok = this._captureDeskewed();
-          if (!ok) ok = this._captureStrip();
-        }
-        if (!ok) this.capture();   // throws RangeError on luminance fail
-        this._flashAnim();
-        this._enterReview();
-      } catch (err) {
-        this._setCoach(err.message, false);
-      }
-    }
-
-    _enterReview() {
-      const last = this.segments[this.segments.length - 1];
-      if (this._ui && last) {
-        try { this._ui.still.src = last.toDataURL("image/jpeg", 0.85); } catch (_) {}
-      }
-      this._setMode("review");
-    }
-
-    _retake() {
-      // Discard the just-captured section and go back to live.
-      this.removeLastSegment();
-      this._setMode("live");
-    }
-
-    _addSection() {
-      // Keep this section; capture the next part of the long receipt.
-      this._setMode("live");
-    }
-
-    _useReceipt() { this._finish(); }
-
-    async _finish() {
-      if (!this.segments.length || this._busy) return;
-      this._busy = true;
-      this._ui.proc.hidden = false;
-      this._ui.procMsg.textContent = "Uploading…";
-      try {
-        const result = await this.submit();
-        this.close();
-        if (this._resolveFlow) this._resolveFlow(result);
-      } catch (err) {
-        this._busy = false;
-        this._ui.proc.hidden = true;
-        if (err && err.rejected) {
-          // Server rejected (unreadable / duplicate / stale) — let the user retake.
-          this.segments = [];
-          this._setMode("live");
-          this._setCoach(err.message, false);
-        } else {
-          this.close();
-          if (this._rejectFlow) this._rejectFlow(err);
-        }
-      }
-    }
-
-    _cancel() { this.close(); if (this._rejectFlow) this._rejectFlow({ cancelled: true }); }
-
-    close() { this.stop(); this._teardownUI(); }
-    _teardownUI() {
-      if (this._loopTimer) { clearInterval(this._loopTimer); this._loopTimer = null; }
-      if (this._ui && this._ui.root) this._ui.root.remove();
-      this._ui = null; this._prevLuma = null; this._goodStreak = 0;
-    }
-
-    /* --------------------------------------------------- camera lifecycle -- */
-    async start() {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error("Camera API unavailable. Serve over HTTPS.");
-      }
-      const { idealWidth, idealHeight } = this.opts;
-      const preferred = { audio: false, video: {
-        facingMode: { exact: "environment" },
-        width: { ideal: idealWidth }, height: { ideal: idealHeight },
-        advanced: [{ focusMode: "continuous" }],
-      }};
-      const fallback = { audio: false, video: {
-        facingMode: "environment", width: { ideal: idealWidth }, height: { ideal: idealHeight },
-      }};
-      try { this.stream = await navigator.mediaDevices.getUserMedia(preferred); }
-      catch (err) { this._emit("status", { phase: "fallback", message: "Using default camera." });
-        this.stream = await navigator.mediaDevices.getUserMedia(fallback); }
-      if (this.video) { this.video.srcObject = this.stream; await this.video.play().catch(() => {}); }
-      this._setupTorch();
-      this._emit("ready", { width: this.video && this.video.videoWidth });
-      return this;
-    }
-
-    _setupTorch() {
-      const track = this.stream && this.stream.getVideoTracks()[0];
-      const caps = track && track.getCapabilities && track.getCapabilities();
-      if (this._ui && caps && caps.torch) this._ui.flash.hidden = false;
-    }
-    async _toggleTorch() {
-      const track = this.stream && this.stream.getVideoTracks()[0];
-      const caps = track && track.getCapabilities && track.getCapabilities();
-      if (!track || !caps || !caps.torch) return;
-      this._torchOn = !this._torchOn;
-      try { await track.applyConstraints({ advanced: [{ torch: this._torchOn }] });
-        if (this._ui) this._ui.flash.classList.toggle("on", this._torchOn); } catch (_) {}
-    }
-
-    stop() {
-      if (this.stream) { this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; }
-      if (this.video) this.video.srcObject = null;
-    }
-
-    /* ---------------------------------------------- core capture + crop --- */
+    /* ---------------------------------------------- fixed-rect fallback --- */
     capture() {
       const v = this.video;
       if (!v || !v.videoWidth) throw new Error("Camera not started.");
@@ -821,32 +582,23 @@
       const scale = Math.max(v.videoWidth / vRect.width, v.videoHeight / vRect.height);
       const dispW = v.videoWidth / scale, dispH = v.videoHeight / scale;
       const offX = (vRect.width - dispW) / 2, offY = (vRect.height - dispH) / 2;
-      let sx = ((rRect.left - vRect.left) - offX) * scale;
-      let sy = ((rRect.top - vRect.top) - offY) * scale;
+      let sx = ((rRect.left - vRect.left) - offX) * scale, sy = ((rRect.top - vRect.top) - offY) * scale;
       let sw = rRect.width * scale, sh = rRect.height * scale;
       sx = Math.max(0, Math.min(sx, v.videoWidth)); sy = Math.max(0, Math.min(sy, v.videoHeight));
       sw = Math.max(1, Math.min(sw, v.videoWidth - sx)); sh = Math.max(1, Math.min(sh, v.videoHeight - sy));
-
       const dpr = global.devicePixelRatio || 1;
       const outW = Math.round(rRect.width * dpr), outH = Math.round(rRect.height * dpr);
       const rotate = v.videoWidth > v.videoHeight && global.innerHeight >= global.innerWidth;
-
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
-      if (rotate) {
-        canvas.width = outH; canvas.height = outW;
-        ctx.translate(canvas.width, 0); ctx.rotate(Math.PI / 2);
-        ctx.drawImage(v, sx, sy, sw, sh, 0, 0, outW, outH);
-      } else {
-        canvas.width = outW; canvas.height = outH;
-        ctx.drawImage(v, sx, sy, sw, sh, 0, 0, outW, outH);
-      }
+      if (rotate) { canvas.width = outH; canvas.height = outW; ctx.translate(canvas.width, 0); ctx.rotate(Math.PI / 2); ctx.drawImage(v, sx, sy, sw, sh, 0, 0, outW, outH); }
+      else { canvas.width = outW; canvas.height = outH; ctx.drawImage(v, sx, sy, sw, sh, 0, 0, outW, outH); }
       const luminance = this._screenAndGrayscale(ctx, canvas);
       if (luminance < this.opts.lumaMin) throw new RangeError(`Too dark (${Math.round(luminance)})`);
       if (luminance > this.opts.lumaMax) throw new RangeError(`Too bright (${Math.round(luminance)})`);
       this.segments.push(canvas);
-      this._emit("segment", { count: this.segments.length, luminance, rotated: rotate });
-      return { luminance, rotated: rotate, count: this.segments.length };
+      this._emit("segment", { count: this.segments.length, luminance });
+      return { luminance, count: this.segments.length };
     }
 
     _screenAndGrayscale(ctx, canvas) {
@@ -860,11 +612,73 @@
       return sum / n;
     }
 
+    /* ----------------------------------------------------- review actions -- */
+    _enterReview() {
+      const last = this.segments[this.segments.length - 1];
+      if (this._ui && last) { try { this._ui.still.src = last.toDataURL("image/jpeg", 0.85); } catch (_) {} }
+      this._setMode("review");
+    }
+    _retake() { this.removeLastSegment(); this._setMode("live"); }
+    _addSection() { this._setMode("live"); }
+    _useReceipt() { this._finish(); }
+
+    async _finish() {
+      if (!this.segments.length || this._busy) return;
+      this._busy = true;
+      this._ui.proc.hidden = false; this._ui.procMsg.textContent = "Uploading…";
+      try {
+        const result = await this.submit();
+        this.close();
+        if (this._resolveFlow) this._resolveFlow(result);
+      } catch (err) {
+        this._busy = false; this._ui.proc.hidden = true;
+        if (err && err.rejected) { this.segments = []; this._setMode("live"); this._coach(err.message); }
+        else { this.close(); if (this._rejectFlow) this._rejectFlow(err); }
+      }
+    }
+    _cancel() { this.close(); if (this._rejectFlow) this._rejectFlow({ cancelled: true }); }
+    close() { this.stop(); this._teardownUI(); }
+    _teardownUI() {
+      if (this._loopTimer) { clearInterval(this._loopTimer); this._loopTimer = null; }
+      if (this._ui && this._ui.root) this._ui.root.remove();
+      this._ui = null; this._edges = null;
+    }
+
+    /* --------------------------------------------------- camera lifecycle -- */
+    async start() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("Camera API unavailable. Serve over HTTPS.");
+      const { idealWidth, idealHeight } = this.opts;
+      const preferred = { audio: false, video: { facingMode: { exact: "environment" }, width: { ideal: idealWidth }, height: { ideal: idealHeight }, advanced: [{ focusMode: "continuous" }] } };
+      const fallback = { audio: false, video: { facingMode: "environment", width: { ideal: idealWidth }, height: { ideal: idealHeight } } };
+      try { this.stream = await navigator.mediaDevices.getUserMedia(preferred); }
+      catch (err) { this._emit("status", { phase: "fallback", message: "Using default camera." }); this.stream = await navigator.mediaDevices.getUserMedia(fallback); }
+      if (this.video) { this.video.srcObject = this.stream; await this.video.play().catch(() => {}); }
+      this._setupTorch();
+      this._emit("ready", { width: this.video && this.video.videoWidth });
+      return this;
+    }
+    _setupTorch() {
+      const track = this.stream && this.stream.getVideoTracks()[0];
+      const caps = track && track.getCapabilities && track.getCapabilities();
+      if (this._ui && caps && caps.torch) this._ui.flash.hidden = false;
+    }
+    async _toggleTorch() {
+      const track = this.stream && this.stream.getVideoTracks()[0];
+      const caps = track && track.getCapabilities && track.getCapabilities();
+      if (!track || !caps || !caps.torch) return;
+      this._torchOn = !this._torchOn;
+      try { await track.applyConstraints({ advanced: [{ torch: this._torchOn }] }); if (this._ui) this._ui.flash.classList.toggle("on", this._torchOn); } catch (_) {}
+    }
+    stop() {
+      if (this.stream) { this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; }
+      if (this.video) this.video.srcObject = null;
+    }
+
     get segmentCount() { return this.segments.length; }
     clearSegments() { this.segments = []; }
     removeLastSegment() { this.segments.pop(); this._emit("segment", { count: this.segments.length }); }
 
-    /* ------------------------------------------- multi-image stitching ---- */
+    /* ------------------------------------------- stitch + transmission ---- */
     stitch() {
       if (!this.segments.length) throw new Error("No captured pages to stitch.");
       if (this.segments.length === 1) return this.segments[0];
@@ -872,34 +686,23 @@
       const height = this.segments.reduce((s, c) => s + c.height, 0);
       const target = document.createElement("canvas");
       target.width = width; target.height = height;
-      const ctx = target.getContext("2d");
-      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, width, height);
-      let y = 0;
-      for (const seg of this.segments) { ctx.drawImage(seg, 0, y); y += seg.height; }
+      const ctx = target.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, width, height);
+      let y = 0; for (const seg of this.segments) { ctx.drawImage(seg, 0, y); y += seg.height; }
       return target;
     }
-
     _toJpegBlob(canvas) {
       return new Promise((resolve, reject) => {
-        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Failed to encode JPEG."))),
-          "image/jpeg", this.opts.jpegQuality);
+        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Failed to encode JPEG."))), "image/jpeg", this.opts.jpegQuality);
       });
     }
-
-    /* --------------------------------------- transmission + poll pipeline -- */
     async submit() {
       const blob = await this._toJpegBlob(this.stitch());
       this._emit("status", { phase: "requesting-url", message: "Preparing secure upload…" });
-      const urlResp = await fetch(this.opts.endpoints.uploadUrl, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content_type: "image/jpeg" }),
-      });
+      const urlResp = await fetch(this.opts.endpoints.uploadUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content_type: "image/jpeg" }) });
       if (!urlResp.ok) throw new Error("Could not get an upload URL (HTTP " + urlResp.status + ").");
       const { job_id, upload_url } = await urlResp.json();
       this._emit("status", { phase: "uploading", message: "Uploading receipt…", bytes: blob.size });
-      const putResp = await fetch(upload_url, {
-        method: "PUT", headers: { "Content-Type": "image/jpeg", "X-User-Id": this.opts.userId }, body: blob,
-      });
+      const putResp = await fetch(upload_url, { method: "PUT", headers: { "Content-Type": "image/jpeg", "X-User-Id": this.opts.userId }, body: blob });
       if (!putResp.ok) throw new Error("Upload failed (HTTP " + putResp.status + ").");
       for (let attempt = 1; attempt <= this.opts.maxPolls; attempt++) {
         await new Promise((r) => setTimeout(r, this.opts.pollIntervalMs));
@@ -911,6 +714,21 @@
         if (s.status === "unknown") throw new Error("Job not found on server.");
       }
       throw new Error("Timed out waiting for OCR result.");
+    }
+
+    _coverCropCanvas(maxW) {
+      const v = this.video;
+      if (!v || !v.videoWidth) return null;
+      const VW = global.innerWidth, VH = global.innerHeight;
+      const scaleCover = Math.max(VW / v.videoWidth, VH / v.videoHeight);
+      const cropW = VW / scaleCover, cropH = VH / scaleCover;
+      const cropX = (v.videoWidth - cropW) / 2, cropY = (v.videoHeight - cropH) / 2;
+      const outW = Math.max(1, Math.min(maxW, Math.round(cropW)));
+      const outH = Math.max(1, Math.round(outW * cropH / cropW));
+      const cv2 = document.createElement("canvas");
+      cv2.width = outW; cv2.height = outH;
+      cv2.getContext("2d").drawImage(v, cropX, cropY, cropW, cropH, 0, 0, outW, outH);
+      return cv2;
     }
   }
 
