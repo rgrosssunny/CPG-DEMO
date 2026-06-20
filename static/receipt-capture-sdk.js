@@ -231,7 +231,8 @@
 .rcap-root{position:fixed;inset:0;z-index:2147483000;background:#000;overflow:hidden;
   font-family:Manrope,system-ui,-apple-system,sans-serif;color:#fff;-webkit-user-select:none;user-select:none}
 .rcap-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
-.rcap-frame{position:absolute;left:6%;right:6%;top:15%;bottom:24%;
+.rcap-frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  height:64vh;width:calc(64vh * 0.62);max-width:88vw;
   border:1px solid rgba(255,255,255,.35);border-radius:6px;pointer-events:none;transition:border-color .25s}
 .rcap-corner{position:absolute;width:26px;height:26px;border:3px solid var(--rcap-accent);transition:border-color .25s}
 .rcap-corner.tl{top:-2px;left:-2px;border-right:0;border-bottom:0;border-radius:8px 0 0 0}
@@ -246,9 +247,10 @@
 .rcap-detect{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;opacity:0;transition:opacity .15s}
 .rcap-detect polygon{fill:rgba(34,197,94,.12);stroke:var(--rcap-accent);stroke-width:3;
   stroke-linejoin:round;vector-effect:non-scaling-stroke}
-.rcap-still{position:absolute;left:6%;top:15%;width:88%;height:61%;
-  object-fit:cover;border-radius:6px;background:#111}
-.rcap-checklist{position:absolute;left:50%;bottom:25%;transform:translateX(-50%);display:flex;gap:14px;
+.rcap-still{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  height:64vh;width:calc(64vh * 0.62);max-width:88vw;
+  object-fit:contain;border-radius:6px;background:#111}
+.rcap-checklist{position:absolute;left:50%;top:76%;transform:translateX(-50%);display:flex;gap:14px;
   background:rgba(15,15,18,.82);padding:9px 14px;border-radius:12px;font-size:14px;font-weight:600;white-space:nowrap}
 .rcap-checklist b{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;
   background:var(--rcap-accent);color:#1a1a1a;font-size:11px;margin-right:5px;vertical-align:middle}
@@ -373,8 +375,8 @@
       const o = this.opts;
       const useDet = this._cvReady && o.edgeDetection;
       let msg, ready = false;
-      if (useDet && (!quad || quad.areaFrac < o.minQuadArea)) msg = "Fit the whole receipt in view";
-      else if (useDet && quad.areaFrac < 0.25) msg = "Move closer to the receipt";
+      if (useDet && (!quad || quad.areaFrac < o.minQuadArea)) msg = "Line up the receipt edges in the box";
+      else if (useDet && quad.areaFrac < 0.20) msg = "Move closer";
       else if (mean < o.lumaMin) msg = "Too dark — add light or tap ⚡";
       else if (mean > o.lumaMax) msg = "Too bright — reduce light";
       else if (glareFrac > o.glareMax) msg = "Glare detected — tilt the receipt";
