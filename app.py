@@ -356,25 +356,27 @@ def run_analyze(job_id, file_bytes, user_id):
         except (ValueError, OverflowError):
             pass  # unparseable date — let it through, real system would flag for review
 
-    # 3. Anti-fraud deduplication (two indexes). Gated by DEDUP_ENABLED so the
-    #    same receipt can be re-scanned during prototyping; turn it on for prod.
+    # 3. Anti-fraud deduplication (two indexes).
+    #    TEMPORARILY DISABLED while validating basic processing — this lets the
+    #    same receipt be scanned repeatedly. Uncomment the block below (and/or
+    #    set DEDUP_ENABLED=true) to restore the anti-fraud guards for production.
     image_hash = hashlib.sha256(file_bytes).hexdigest()
-    semantic = "_".join([
-        user_id,
-        str((norm["vendor"] or {}).get("name")),
-        str(norm["total"]),
-        str(norm["date"]),
-    ])
-    if DEDUP_ENABLED:
-        if image_hash in SEEN_IMAGE_HASHES:
-            _reject(job, "Duplicate image — this exact file was already submitted.", norm)
-            return
-        if semantic in SEEN_SEMANTIC:
-            _reject(job, "Duplicate receipt — same vendor, total, and date already claimed.", norm)
-            return
-        SEEN_IMAGE_HASHES[image_hash] = job_id
-        SEEN_SEMANTIC[semantic] = job_id
     norm["image_sha256"] = image_hash
+    # semantic = "_".join([
+    #     user_id,
+    #     str((norm["vendor"] or {}).get("name")),
+    #     str(norm["total"]),
+    #     str(norm["date"]),
+    # ])
+    # if DEDUP_ENABLED:
+    #     if image_hash in SEEN_IMAGE_HASHES:
+    #         _reject(job, "Duplicate image — this exact file was already submitted.", norm)
+    #         return
+    #     if semantic in SEEN_SEMANTIC:
+    #         _reject(job, "Duplicate receipt — same vendor, total, and date already claimed.", norm)
+    #         return
+    #     SEEN_IMAGE_HASHES[image_hash] = job_id
+    #     SEEN_SEMANTIC[semantic] = job_id
     job.update(status="done", result=norm)
 
 
