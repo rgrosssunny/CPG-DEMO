@@ -188,12 +188,23 @@
       proc.innerHTML = '<div class="rcap-spin"></div><div class="rcap-proc-msg">Uploading…</div>';
       root.appendChild(proc);
 
+      // Error / rejection panel (shows the reason — never fails silently).
+      const errp = document.createElement("div");
+      errp.className = "rcap-errpanel"; errp.hidden = true;
+      errp.innerHTML =
+        '<div class="rcap-err-card"><div class="rcap-err-icon">⚠️</div>' +
+        '<div class="rcap-err-msg"></div>' +
+        '<button class="rcap-btn-solid rcap-err-retake">Retake</button>' +
+        '<button class="rcap-add rcap-err-close">Close</button></div>';
+      root.appendChild(errp);
+
       document.body.appendChild(root);
       this._ui = {
-        root, rails, overlap, still, checklist, coach, help, proc,
+        root, rails, overlap, still, checklist, coach, help, proc, errp,
         dot: top.querySelector(".rcap-dot"), count: top.querySelector(".rcap-count"),
         flash: top.querySelector(".rcap-flash"),
         shutter: bottom.querySelector(".rcap-shutter"), procMsg: proc.querySelector(".rcap-proc-msg"),
+        errMsg: errp.querySelector(".rcap-err-msg"),
       };
 
       top.querySelector(".rcap-close").onclick = () => this._cancel();
@@ -204,6 +215,8 @@
       this._ui.shutter.onclick = () => this._manualCapture();
       bottom.querySelector(".rcap-use").onclick = () => this._useReceipt();
       bottom.querySelector(".rcap-add").onclick = () => this._addSection();
+      errp.querySelector(".rcap-err-retake").onclick = () => { errp.hidden = true; this.segments = []; this._setMode("live"); };
+      errp.querySelector(".rcap-err-close").onclick = () => this._cancel();
 
       this.on("status", (s) => {
         if (this._ui && !this._ui.proc.hidden) {
@@ -295,6 +308,12 @@
 .rcap-btn-solid{width:100%;border:0;border-radius:999px;padding:13px;background:#2269B5;color:#fff;font-weight:700;font-size:15px;cursor:pointer;font-family:inherit}
 .rcap-proc{position:absolute;inset:0;background:rgba(0,0,0,.78);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:8}
 .rcap-proc[hidden]{display:none}
+.rcap-errpanel{position:absolute;inset:0;background:rgba(0,0,0,.82);display:grid;place-items:center;z-index:9;padding:24px}
+.rcap-errpanel[hidden]{display:none}
+.rcap-err-card{background:#fff;color:#173D53;border-radius:18px;padding:24px 22px;max-width:340px;text-align:center}
+.rcap-err-icon{font-size:40px;margin-bottom:8px}
+.rcap-err-msg{font-size:15px;font-weight:600;line-height:1.45;margin-bottom:18px}
+.rcap-err-card .rcap-add{color:#173D53;border-color:#cbd5e1;margin-top:10px}
 .rcap-spin{width:42px;height:42px;border:4px solid #fff3;border-top-color:#1DB0C9;border-radius:50%;animation:rcap-spin .8s linear infinite}
 .rcap-proc-msg{font-size:16px;font-weight:600}
 @keyframes rcap-spin{to{transform:rotate(360deg)}}`;
@@ -588,9 +607,16 @@
         if (this._resolveFlow) this._resolveFlow(result);
       } catch (err) {
         this._busy = false; this._ui.proc.hidden = true;
-        if (err && err.rejected) { this.segments = []; this._setMode("live"); this._coach(err.message); }
-        else { this.close(); if (this._rejectFlow) this._rejectFlow(err); }
+        // Always surface the reason (rejection or error) — never silently revert.
+        this._showErr((err && err.message) ? err.message : "Something went wrong.");
       }
+    }
+
+    /** Full-screen error/rejection panel with the reason + Retake / Close. */
+    _showErr(msg) {
+      if (!this._ui) return;
+      this._ui.errMsg.textContent = msg;
+      this._ui.errp.hidden = false;
     }
     _cancel() { this.close(); if (this._rejectFlow) this._rejectFlow({ cancelled: true }); }
     close() { this.stop(); this._teardownUI(); }

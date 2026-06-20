@@ -41,6 +41,9 @@ VERYFI_URL = "https://api.veryfi.com/api/v8/partner/documents"
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 RECEIPT_MAX_AGE_DAYS = int(os.getenv("RECEIPT_MAX_AGE_DAYS", "14"))
 TEXTRACT_MIN_CONFIDENCE = float(os.getenv("TEXTRACT_MIN_CONFIDENCE", "50"))
+# Off by default during prototyping so the same receipt can be re-scanned.
+# Set DEDUP_ENABLED=true in production to enforce the anti-fraud guards.
+DEDUP_ENABLED = os.getenv("DEDUP_ENABLED", "false").lower() == "true"
 
 # In-memory stores (prototype only — reset on restart). A real deployment would
 # use S3 + Textract async jobs + DynamoDB for the dedup indexes.
@@ -353,24 +356,24 @@ def run_analyze(job_id, file_bytes, user_id):
         except (ValueError, OverflowError):
             pass  # unparseable date — let it through, real system would flag for review
 
-    # 3. Anti-fraud deduplication (two indexes).
+    # 3. Anti-fraud deduplication (two indexes). Gated by DEDUP_ENABLED so the
+    #    same receipt can be re-scanned during prototyping; turn it on for prod.
     image_hash = hashlib.sha256(file_bytes).hexdigest()
-    if image_hash in SEEN_IMAGE_HASHES:
-        _reject(job, "Duplicate image — this exact file was already submitted.", norm)
-        return
     semantic = "_".join([
         user_id,
         str((norm["vendor"] or {}).get("name")),
         str(norm["total"]),
         str(norm["date"]),
     ])
-    if semantic in SEEN_SEMANTIC:
-        _reject(job, "Duplicate receipt — same vendor, total, and date already claimed.", norm)
-        return
-
-    # Passed everything — record the dedup keys and finalize.
-    SEEN_IMAGE_HASHES[image_hash] = job_id
-    SEEN_SEMANTIC[semantic] = job_id
+    if DEDUP_ENABLED:
+        if image_hash in SEEN_IMAGE_HASHES:
+            _reject(job, "Duplicate image — this exact file was already submitted.", norm)
+            return
+        if semantic in SEEN_SEMANTIC:
+            _reject(job, "Duplicate receipt — same vendor, total, and date already claimed.", norm)
+            return
+        SEEN_IMAGE_HASHES[image_hash] = job_id
+        SEEN_SEMANTIC[semantic] = job_id
     norm["image_sha256"] = image_hash
     job.update(status="done", result=norm)
 
