@@ -325,8 +325,17 @@
 </style>
 
 <script>
+  // ===== Backend configuration =====================================
+  // Leave empty to use same-origin (localhost Flask) or the offline mock.
+  // Set to your deployed Flask base URL (e.g. "https://cpg-demo.onrender.com")
+  // to run the REAL AWS Textract pipeline from the GitHub Pages frontend.
+  window.BACKEND_URL = "";
+</script>
+<script>
 (function(){
-  // This mock stands in only when there's no Flask backend to talk to:
+  // If a remote backend is configured, never mock — let real fetches through.
+  if(window.BACKEND_URL) return;
+  // Otherwise this mock stands in only when there's no Flask backend to talk to:
   //   - opened directly from disk (file://)
   //   - served statically from GitHub Pages (*.github.io) or Cloudflare Pages
   // When served from http://localhost:5050/noclip (or any other host running
@@ -936,10 +945,12 @@ submitBtn.addEventListener("click",async()=>{
 /* =================== CAMERA CAPTURE (AWS Textract SDK) =================== */
 let captureSDK = null;
 
+const API_BASE = (window.BACKEND_URL || "").replace(/\/$/, "");
+
 async function checkAwsStatus(){
   const w = $("awsWarn");
   try{
-    const d = await (await fetch("/aws/status")).json();
+    const d = await (await fetch(API_BASE + "/aws/status")).json();
     if(!d.configured){
       w.textContent = "AWS Textract not configured — " + (d.detail||"") + " You can still capture, but analysis will fail until credentials are set.";
       w.classList.remove("hidden");
@@ -971,7 +982,10 @@ async function startCamera(){
   if(typeof ReceiptCaptureSDK==="undefined"){ toast("Capture SDK failed to load."); return; }
   $("rcStep1").classList.add("hidden"); $("rcCamera").classList.remove("hidden");
   $("camThumbs").innerHTML=""; $("camUndo").classList.add("hidden"); $("camSubmit").classList.add("hidden");
-  captureSDK = new ReceiptCaptureSDK({ userId: "member-demo" });
+  captureSDK = new ReceiptCaptureSDK({
+    userId: "member-demo",
+    endpoints: { uploadUrl: API_BASE + "/aws/get-upload-url", status: API_BASE + "/aws/analyze-status" },
+  });
   captureSDK.on("status", s=>{
     $("camStatus").textContent = s.message ||
       (s.phase==="polling" ? `Analyzing on AWS… (check ${s.attempt})` : s.phase);

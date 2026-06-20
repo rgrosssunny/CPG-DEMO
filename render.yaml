@@ -1,0 +1,26 @@
+# Render Blueprint — deploy the Flask + Textract backend on the free tier.
+# In Render: New → Blueprint → pick this repo. Render reads this file, then
+# prompts you to paste the two AWS secrets (they're marked sync:false so they
+# stay out of the repo). See README "AWS Textract camera-capture SDK".
+services:
+  - type: web
+    name: cpg-demo-backend
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # Single worker: JOBS/dedup state is in memory, so the upload and the poll
+    # must hit the same process.
+    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT
+    envVars:
+      - key: AWS_ACCESS_KEY_ID
+        sync: false          # you paste this in the Render dashboard
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false          # you paste this in the Render dashboard
+      - key: AWS_REGION
+        value: us-east-1
+      - key: ALLOWED_ORIGIN
+        value: https://rgrosssunny.github.io
+      - key: RECEIPT_MAX_AGE_DAYS
+        value: "14"
+      - key: TEXTRACT_MIN_CONFIDENCE
+        value: "50"

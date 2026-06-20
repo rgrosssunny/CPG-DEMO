@@ -28,6 +28,7 @@ import requests
 from dateutil import parser as date_parser
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
 
 load_dotenv()
 
@@ -52,6 +53,12 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 OFFERS_PATH = os.path.join(APP_DIR, "offers.json")
 
 app = Flask(__name__, static_folder="static")
+
+# Allow the GitHub Pages frontend (a different origin) to call the /aws/* API.
+# Set ALLOWED_ORIGIN to your Pages origin in production; "*" is fine for testing
+# since these endpoints carry no cookies/credentials.
+ALLOWED_ORIGIN = os.getenv("ALLOWED_ORIGIN", "*")
+CORS(app, resources={r"/aws/*": {"origins": ALLOWED_ORIGIN}})
 
 
 # ---------------------------------------------------------------- offers/UPC --
@@ -447,7 +454,10 @@ def aws_get_upload_url():
     job_id = uuid.uuid4().hex
     key = f"receipts/{job_id}.jpg"
     JOBS[job_id] = {"status": "awaiting-upload", "result": None, "error": None, "key": key}
-    return jsonify({"job_id": job_id, "key": key, "upload_url": f"/aws/upload/{job_id}"})
+    # Absolute URL so a cross-origin frontend (GitHub Pages) PUTs to THIS server,
+    # not to its own origin. In production this would be an S3 presigned PUT URL.
+    upload_url = request.host_url.rstrip("/") + f"/aws/upload/{job_id}"
+    return jsonify({"job_id": job_id, "key": key, "upload_url": upload_url})
 
 
 @app.route("/aws/upload/<job_id>", methods=["PUT", "POST"])
