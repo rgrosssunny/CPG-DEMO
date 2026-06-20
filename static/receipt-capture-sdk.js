@@ -42,10 +42,14 @@
     motionMax: 8,
     autoCapture: true,
     autoCaptureFrames: 4,
+    edgeDetection: true,   // OpenCV.js + jscanify: detect receipt edges + deskew
+    minQuadArea: 0.12,     // detected quad must cover >=12% of the frame to count
     pollIntervalMs: 2000,
     maxPolls: 60,
     userId: "demo-user",
     endpoints: { uploadUrl: "/aws/get-upload-url", status: "/aws/analyze-status" },
+    // CDN source for the (lazy-loaded) OpenCV.js WASM build (~8 MB).
+    opencvUrl: "https://docs.opencv.org/4.8.0/opencv.js",
   };
 
   const ACCENT_SEARCH = "#F5B301";
@@ -69,6 +73,9 @@
       this._busy = false;
       this._torchOn = false;
       this._mode = "live";
+      this._cvReady = false;     // OpenCV.js loaded + initialized?
+      this._cvLoading = null;
+      this._quad = null;         // last detected quad (in detection-canvas space)
     }
 
     /* ----------------------------------------------------------- events --- */
@@ -82,6 +89,10 @@
         this._rejectFlow = reject;
         try {
           this._buildUI();
+          // Lazy-load edge detection in the background — don't block the camera.
+          if (this.opts.edgeDetection) {
+            this._loadCV().catch(() => { this._cvReady = false; });  // silent fallback
+          }
           await this.start();
           this._startAnalysisLoop();
           this._setMode("live");
@@ -119,6 +130,16 @@
         '<span class="rcap-edge right">Receipt edge</span>';
       this.reticle = frame;
       root.appendChild(frame);
+
+      // LIVE: detected-receipt polygon overlay (snaps to the real edges).
+      const SVGNS = "http://www.w3.org/2000/svg";
+      const detect = document.createElementNS(SVGNS, "svg");
+      detect.setAttribute("class", "rcap-detect");
+      detect.setAttribute("preserveAspectRatio", "none");
+      const detectPoly = document.createElementNS(SVGNS, "polygon");
+      detectPoly.setAttribute("points", "");
+      detect.appendChild(detectPoly);
+      root.appendChild(detect);
 
       // REVIEW: frozen still + field checklist (occupies the same framed area)
       const still = document.createElement("img");
@@ -179,7 +200,7 @@
 
       document.body.appendChild(root);
       this._ui = {
-        root, frame, still, checklist, coach, help, proc,
+        root, frame, detect, detectPoly, still, checklist, coach, help, proc,
         dot: top.querySelector(".rcap-dot"),
         count: top.querySelector(".rcap-count"),
         flash: top.querySelector(".rcap-flash"),
@@ -222,6 +243,9 @@
 .rcap-edge.top{top:-12px;left:50%;transform:translateX(-50%)}
 .rcap-edge.left{left:-11px;top:50%;transform:translateY(-50%) rotate(180deg);writing-mode:vertical-rl}
 .rcap-edge.right{right:-11px;top:50%;transform:translateY(-50%);writing-mode:vertical-rl}
+.rcap-detect{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;opacity:0;transition:opacity .15s}
+.rcap-detect polygon{fill:rgba(34,197,94,.12);stroke:var(--rcap-accent);stroke-width:3;
+  stroke-linejoin:round;vector-effect:non-scaling-stroke}
 .rcap-still{position:absolute;left:6%;top:15%;width:88%;height:61%;
   object-fit:cover;border-radius:6px;background:#111}
 .rcap-checklist{position:absolute;left:50%;bottom:25%;transform:translateX(-50%);display:flex;gap:14px;
@@ -257,6 +281,7 @@
 .rcap-root[data-mode="live"] .rcap-review-actions,
 .rcap-root[data-mode="live"] .rcap-retake{display:none}
 .rcap-root[data-mode="review"] .rcap-frame,
+.rcap-root[data-mode="review"] .rcap-detect,
 .rcap-root[data-mode="review"] .rcap-coach,
 .rcap-root[data-mode="review"] .rcap-shutter-row,
 .rcap-root[data-mode="review"] .rcap-flash,
@@ -316,17 +341,17 @@
 
     /* ---------------------------------------------------- live analysis --- */
     _startAnalysisLoop() {
-      const an = document.createElement("canvas");
-      const ctx = an.getContext("2d", { willReadFrequently: true });
       this._loopTimer = setInterval(() => {
         if (this._busy || this._mode !== "live" || !this.video || !this.video.videoWidth) return;
-        const w = 160, h = Math.max(60, Math.round(160 * this.video.videoHeight / this.video.videoWidth));
-        an.width = w; an.height = h;
-        ctx.drawImage(this.video, 0, 0, w, h);
+        // One cover-cropped canvas (matches what's shown on screen) feeds both
+        // the lighting/steadiness checks and edge detection.
+        const cap = this._coverCropCanvas(240);
+        if (!cap) return;
         let data;
-        try { data = ctx.getImageData(0, 0, w, h).data; } catch (_) { return; }
+        try { data = cap.getContext("2d").getImageData(0, 0, cap.width, cap.height).data; }
+        catch (_) { return; }
         let sum = 0, glare = 0, motion = 0;
-        const n = w * h, luma = new Uint8Array(n);
+        const n = cap.width * cap.height, luma = new Uint8Array(n);
         for (let i = 0, p = 0; i < data.length; i += 4, p++) {
           const y = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
           luma[p] = y; sum += y; if (y > 245) glare++;
@@ -336,18 +361,25 @@
           let d = 0; for (let p = 0; p < n; p++) d += Math.abs(luma[p] - this._prevLuma[p]); motion = d / n;
         } else { motion = 999; }
         this._prevLuma = luma;
-        this._evaluate(mean, glareFrac, motion);
+
+        const quad = (this._cvReady && this.opts.edgeDetection) ? this._detectQuad(cap) : null;
+        this._quad = quad;
+        this._updateDetectOverlay(quad);
+        this._evaluate(mean, glareFrac, motion, quad);
       }, 220);
     }
 
-    _evaluate(mean, glareFrac, motion) {
+    _evaluate(mean, glareFrac, motion, quad) {
       const o = this.opts;
+      const useDet = this._cvReady && o.edgeDetection;
       let msg, ready = false;
-      if (mean < o.lumaMin) msg = "Too dark — add light or tap ⚡";
+      if (useDet && (!quad || quad.areaFrac < o.minQuadArea)) msg = "Fit the whole receipt in view";
+      else if (useDet && quad.areaFrac < 0.25) msg = "Move closer to the receipt";
+      else if (mean < o.lumaMin) msg = "Too dark — add light or tap ⚡";
       else if (mean > o.lumaMax) msg = "Too bright — reduce light";
       else if (glareFrac > o.glareMax) msg = "Glare detected — tilt the receipt";
       else if (motion > o.motionMax) msg = "Hold steady…";
-      else { msg = "Looks good — hold still"; ready = true; }
+      else { msg = useDet ? "Receipt detected — hold still" : "Looks good — hold still"; ready = true; }
       this._setCoach(msg, ready);
       if (ready) this._goodStreak++; else this._goodStreak = 0;
       if (o.autoCapture && ready && this._goodStreak >= o.autoCaptureFrames && Date.now() > this._cooldownUntil) {
@@ -356,13 +388,166 @@
       }
     }
 
+    _updateDetectOverlay(quad) {
+      if (!this._ui) return;
+      const svg = this._ui.detect, poly = this._ui.detectPoly;
+      if (quad && quad.areaFrac >= this.opts.minQuadArea) {
+        const c = quad.c;
+        svg.setAttribute("viewBox", `0 0 ${quad.w} ${quad.h}`);
+        poly.setAttribute("points",
+          [c.topLeftCorner, c.topRightCorner, c.bottomRightCorner, c.bottomLeftCorner]
+            .map((p) => `${p.x},${p.y}`).join(" "));
+        svg.style.opacity = "1";
+      } else {
+        svg.style.opacity = "0";
+      }
+    }
+
+    /* ------------------------------------------------ edge detection (CV) -- */
+    _loadCV() {
+      if (this._cvReady) return Promise.resolve(true);
+      if (this._cvLoading) return this._cvLoading;
+      const loadScript = (src) => new Promise((res, rej) => {
+        const s = document.createElement("script");
+        s.src = src; s.async = true; s.onload = () => res(); s.onerror = () => rej(new Error("load failed: " + src));
+        document.head.appendChild(s);
+      });
+      this._cvLoading = (async () => {
+        if (!(global.cv && global.cv.Mat)) {
+          await loadScript(this.opts.opencvUrl);
+          await new Promise((res, rej) => {   // OpenCV WASM finishes init after script load
+            const t0 = Date.now();
+            (function wait() {
+              if (global.cv && global.cv.Mat) return res();
+              if (Date.now() - t0 > 30000) return rej(new Error("OpenCV init timeout"));
+              setTimeout(wait, 150);
+            })();
+          });
+        }
+        this._cvReady = true;
+        this._emit("status", { phase: "detector-ready" });
+        return true;
+      })();
+      return this._cvLoading;
+    }
+
+    /** Order 4 unsorted points into tl/tr/br/bl using sum/diff of coordinates. */
+    _orderCorners(pts) {
+      const sum = (p) => p.x + p.y, diff = (p) => p.y - p.x;
+      const bySum = [...pts].sort((a, b) => sum(a) - sum(b));
+      const byDiff = [...pts].sort((a, b) => diff(a) - diff(b));
+      return {
+        topLeftCorner: bySum[0], bottomRightCorner: bySum[3],
+        topRightCorner: byDiff[0], bottomLeftCorner: byDiff[3],
+      };
+    }
+
+    /** Draw the on-screen (cover-cropped) region into a canvas at most maxW wide. */
+    _coverCropCanvas(maxW) {
+      const v = this.video;
+      if (!v || !v.videoWidth) return null;
+      const VW = global.innerWidth, VH = global.innerHeight;
+      const scaleCover = Math.max(VW / v.videoWidth, VH / v.videoHeight);
+      const cropW = VW / scaleCover, cropH = VH / scaleCover;
+      const cropX = (v.videoWidth - cropW) / 2, cropY = (v.videoHeight - cropH) / 2;
+      const outW = Math.max(1, Math.min(maxW, Math.round(cropW)));
+      const outH = Math.max(1, Math.round(outW * cropH / cropW));
+      const cv2 = document.createElement("canvas");
+      cv2.width = outW; cv2.height = outH;
+      cv2.getContext("2d").drawImage(v, cropX, cropY, cropW, cropH, 0, 0, outW, outH);
+      return cv2;
+    }
+
+    /** Detect the largest receipt-like quadrilateral in a canvas via
+     *  grayscale -> blur -> Canny -> contours -> 4-point convex approximation.
+     *  Returns {c, areaFrac, w, h} (c = ordered corners) or null. */
+    _detectQuad(canvas) {
+      if (!this._cvReady || !global.cv) return null;
+      const cv = global.cv;
+      let src, gray, edged, k, contours, hier;
+      try {
+        src = cv.imread(canvas); gray = new cv.Mat(); edged = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+        cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+        cv.Canny(gray, edged, 50, 150);
+        k = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+        cv.dilate(edged, edged, k);   // close small gaps in the edge outline
+        contours = new cv.MatVector(); hier = new cv.Mat();
+        cv.findContours(edged, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+        let best = null, bestArea = 0;
+        for (let i = 0; i < contours.size(); i++) {
+          const cnt = contours.get(i);
+          const peri = cv.arcLength(cnt, true);
+          const approx = new cv.Mat();
+          cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+          if (approx.rows === 4 && cv.isContourConvex(approx)) {
+            const a = cv.contourArea(approx);
+            if (a > bestArea) {
+              bestArea = a;
+              const pts = [];
+              for (let j = 0; j < 4; j++) pts.push({ x: approx.data32S[j * 2], y: approx.data32S[j * 2 + 1] });
+              best = pts;
+            }
+          }
+          approx.delete(); cnt.delete();
+        }
+        if (!best) return null;
+        const areaFrac = bestArea / (canvas.width * canvas.height);
+        if (!(areaFrac > 0) || areaFrac > 0.999) return null;
+        return { c: this._orderCorners(best), areaFrac, w: canvas.width, h: canvas.height };
+      } catch (_) { return null; }
+      finally {
+        [src, gray, edged, k, contours, hier].forEach((m) => { if (m && m.delete) { try { m.delete(); } catch (_) {} } });
+      }
+    }
+
+    /** Capture using perspective de-warp from the detected quad. Returns true if
+     *  a segment was pushed, false if no usable quad (caller falls back). */
+    _captureDeskewed() {
+      if (!this._cvReady || !global.cv) return false;
+      const cv = global.cv;
+      const cap = this._coverCropCanvas(1600);
+      if (!cap) return false;
+      const det = this._detectQuad(cap);
+      if (!det || det.areaFrac < this.opts.minQuadArea) return false;
+      const c = det.c, d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+      const W = Math.max(40, Math.round((d(c.topLeftCorner, c.topRightCorner) + d(c.bottomLeftCorner, c.bottomRightCorner)) / 2));
+      const H = Math.max(40, Math.round((d(c.topLeftCorner, c.bottomLeftCorner) + d(c.topRightCorner, c.bottomRightCorner)) / 2));
+      const out = document.createElement("canvas");
+      let src, dst, sT, dT, M;
+      try {
+        src = cv.imread(cap); dst = new cv.Mat();
+        sT = cv.matFromArray(4, 1, cv.CV_32FC2, [
+          c.topLeftCorner.x, c.topLeftCorner.y, c.topRightCorner.x, c.topRightCorner.y,
+          c.bottomRightCorner.x, c.bottomRightCorner.y, c.bottomLeftCorner.x, c.bottomLeftCorner.y,
+        ]);
+        dT = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, W, 0, W, H, 0, H]);
+        M = cv.getPerspectiveTransform(sT, dT);
+        cv.warpPerspective(src, dst, M, new cv.Size(W, H), cv.INTER_LINEAR,
+          cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
+        cv.imshow(out, dst);
+      } catch (_) { return false; }
+      finally { [src, dst, sT, dT, M].forEach((m) => { if (m && m.delete) { try { m.delete(); } catch (_) {} } }); }
+      const ctx = out.getContext("2d");
+      const luminance = this._screenAndGrayscale(ctx, out);
+      if (luminance < this.opts.lumaMin) throw new RangeError(`Too dark (${Math.round(luminance)})`);
+      if (luminance > this.opts.lumaMax) throw new RangeError(`Too bright (${Math.round(luminance)})`);
+      this.segments.push(out);
+      this._emit("segment", { count: this.segments.length, luminance, deskewed: true });
+      return true;
+    }
+
     /* ---------------------------------------------------- capture actions -- */
     _manualCapture() { if (this._mode === "live") this._doCapture(false); }
 
     _doCapture(auto) {
       if (this._busy || this._mode !== "live") return;
       try {
-        this.capture();   // throws RangeError on luminance fail
+        // Prefer perspective-corrected capture from the detected edges; fall
+        // back to the fixed-rect crop if no usable quad was found.
+        let ok = false;
+        if (this._cvReady && this.opts.edgeDetection) ok = this._captureDeskewed();
+        if (!ok) this.capture();   // throws RangeError on luminance fail
         this._flashAnim();
         this._enterReview();
       } catch (err) {
