@@ -1,0 +1,114 @@
+[
+  {
+    "upc": "300450449108",
+    "product": "Centrum Silver Adult 50+ Multivitamin",
+    "brand": "Centrum",
+    "category": "otc",
+    "cashback": 3.00,
+    "campaign_id": "CMP-1002",
+    "icon": "💊",
+    "expires": "2026-07-31",
+    "status": "active",
+    "tagline": "Daily multivitamin for adults 50+",
+    "sizes": [
+      { "size": "65 ct", "upc": "300450449016", "cashback": 2.00 },
+      { "size": "100 ct", "upc": "300450449108", "cashback": 3.00 },
+      { "size": "200 ct", "upc": "300450449207", "cashback": 4.00 }
+    ]
+  },
+  {
+    "upc": "070074512525",
+    "product": "Ensure Original Nutrition Shake",
+    "brand": "Ensure",
+    "category": "otc",
+    "cashback": 4.00,
+    "campaign_id": "CMP-1004",
+    "icon": "🥤",
+    "expires": "2026-07-15",
+    "status": "active",
+    "tagline": "Complete, balanced nutrition",
+    "sizes": [
+      { "size": "6 ct", "upc": "070074512525", "cashback": 4.00 },
+      { "size": "16 ct", "upc": "070074512563", "cashback": 9.00 }
+    ]
+  },
+  {
+    "upc": "300450231024",
+    "product": "Tylenol Extra Strength",
+    "brand": "Tylenol",
+    "category": "otc",
+    "cashback": 2.00,
+    "campaign_id": "CMP-1005",
+    "icon": "💊",
+    "expires": "2026-08-30",
+    "status": "active",
+    "tagline": "Pain reliever & fever reducer",
+    "sizes": [
+      { "size": "50 ct", "upc": "300450231017", "cashback": 1.50 },
+      { "size": "100 ct", "upc": "300450231024", "cashback": 2.00 },
+      { "size": "225 ct", "upc": "300450231222", "cashback": 3.50 }
+    ]
+  },
+  {
+    "upc": "036000291452",
+    "product": "Nature Valley Crunchy Granola Bars",
+    "brand": "Nature Valley",
+    "category": "grocery",
+    "cashback": 1.50,
+    "campaign_id": "CMP-1001",
+    "icon": "🥜",
+    "expires": "2026-07-31",
+    "status": "active",
+    "tagline": "Whole-grain oats & honey",
+    "sizes": [
+      { "size": "6 bars", "upc": "036000291452", "cashback": 1.50 },
+      { "size": "12 bars", "upc": "036000291469", "cashback": 2.50 }
+    ]
+  },
+  {
+    "upc": "041220576456",
+    "product": "Campbell's Healthy Request Low-Sodium Soup",
+    "brand": "Campbell's",
+    "category": "food-and-produce",
+    "cashback": 0.75,
+    "campaign_id": "CMP-1003",
+    "icon": "🥫",
+    "expires": "2026-09-15",
+    "status": "active",
+    "tagline": "Heart-healthy, low sodium",
+    "sizes": [
+      { "size": "10.5 oz can", "upc": "041220576456", "cashback": 0.75 }
+    ]
+  },
+  {
+    "upc": "030000010204",
+    "product": "Quaker Old Fashioned Oats",
+    "brand": "Quaker",
+    "category": "food-and-produce",
+    "cashback": 1.25,
+    "campaign_id": "CMP-1006",
+    "icon": "🌾",
+    "expires": "2026-08-01",
+    "status": "active",
+    "tagline": "100% whole grain",
+    "sizes": [
+      { "size": "18 oz", "upc": "030000010198", "cashback": 0.75 },
+      { "size": "42 oz", "upc": "030000010204", "cashback": 1.25 }
+    ]
+  },
+  {
+    "upc": "070074679006",
+    "product": "Glucerna Nutrition Shake",
+    "brand": "Glucerna",
+    "category": "otc",
+    "cashback": 3.50,
+    "campaign_id": "CMP-1007",
+    "icon": "🥛",
+    "expires": "2026-06-30",
+    "status": "exhausted",
+    "tagline": "Designed for people with diabetes",
+    "sizes": [
+      { "size": "6 ct", "upc": "070074679006", "cashback": 3.50 }
+    ]
+  }
+]

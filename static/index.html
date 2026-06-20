@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Clip & Redeem — Receipt Cashback Prototype</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#fff; --ink:#1c2430; --muted:#6b7686;
+    --accent:#2f6df6; --accent-dark:#2356cc; --line:#e4e8ee;
+    --ok:#127a43; --okbg:#e7f7ee; --okline:#b7e4c9;
+    --warn:#8a5a00; --warnbg:#fff5e6; --warnline:#ffe0a6;
+    --err:#d23f3f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{position:sticky;top:0;z-index:5;background:#fff;border-bottom:1px solid var(--line);
+    padding:14px 20px;display:flex;align-items:center;justify-content:space-between}
+  header h1{margin:0;font-size:18px}
+  header p{margin:2px 0 0;color:var(--muted);font-size:13px}
+  .clip-badge{background:var(--accent);color:#fff;border-radius:999px;
+    padding:7px 14px;font-weight:700;font-size:14px}
+  main{max-width:960px;margin:0 auto;padding:20px}
+  h2{font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 12px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+  .offer{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:16px;display:flex;flex-direction:column;gap:6px;position:relative}
+  .offer .icon{font-size:30px}
+  .offer .cash{font-weight:800;color:var(--ok);font-size:18px}
+  .offer .name{font-weight:600;line-height:1.25}
+  .offer .brand{color:var(--muted);font-size:13px}
+  .offer .tag{color:var(--muted);font-size:12.5px}
+  .offer .exp{color:var(--muted);font-size:12px;margin-top:2px}
+  .offer button{margin-top:8px;border:0;border-radius:10px;padding:9px;font-weight:700;
+    font-size:14px;cursor:pointer}
+  .btn-clip{background:#eaf1ff;color:var(--accent-dark)}
+  .btn-clip:hover{background:#dce8ff}
+  .btn-clipped{background:var(--accent);color:#fff}
+  .offer.exhausted{opacity:.6}
+  .offer.exhausted .cash{color:var(--muted)}
+  .pill{position:absolute;top:12px;right:12px;font-size:11px;font-weight:700;
+    padding:3px 8px;border-radius:999px}
+  .pill.soon{background:var(--warnbg);color:var(--warn);border:1px solid var(--warnline)}
+  .pill.out{background:#f0f1f3;color:var(--muted)}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-top:22px}
+  .drop{border:2px dashed var(--line);border-radius:12px;padding:24px;text-align:center;
+    color:var(--muted);cursor:pointer}
+  .drop:hover,.drop.drag{border-color:var(--accent);color:var(--accent);background:#f3f7ff}
+  .preview{margin-top:12px;text-align:center}
+  .preview img{max-width:100%;max-height:260px;border-radius:10px;border:1px solid var(--line)}
+  .row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;align-items:center}
+  button.action{border:0;border-radius:10px;padding:11px 18px;font-weight:700;font-size:15px;cursor:pointer}
+  .btn-primary{background:var(--accent);color:#fff}
+  .btn-primary:disabled{background:#aebfdf;cursor:not-allowed}
+  .btn-ghost{background:#eef1f5;color:var(--ink)}
+  .hidden{display:none}
+  .banner{border-radius:10px;padding:10px 14px;font-size:14px;margin:12px 0}
+  .banner.warn{background:var(--warnbg);color:var(--warn);border:1px solid var(--warnline)}
+  .banner.err{background:#fde9e9;color:var(--err);border:1px solid #f6c6c6}
+  .earned{background:var(--okbg);border:1px solid var(--okline);border-radius:12px;
+    padding:16px;text-align:center;margin-bottom:12px}
+  .earned .amt{font-size:34px;font-weight:800;color:var(--ok)}
+  .result-item{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+  .result-item .r-cash{margin-left:auto;font-weight:700}
+  .ok-tick{color:var(--ok);font-weight:800}
+  .no-tick{color:var(--muted);font-weight:800}
+  .spinner{display:inline-block;width:15px;height:15px;border:2px solid #fff;
+    border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:7px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  details{margin-top:12px}summary{cursor:pointer;color:var(--accent);font-size:13px}
+  pre{background:#0f1623;color:#d7e0ef;padding:12px;border-radius:10px;overflow:auto;font-size:12px;max-height:300px}
+  .clipped-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+  .chip{background:#eaf1ff;color:var(--accent-dark);border-radius:999px;padding:5px 10px;font-size:13px;
+    display:flex;align-items:center;gap:6px}
+  .chip button{border:0;background:transparent;color:var(--accent-dark);cursor:pointer;font-size:14px;line-height:1}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Clip &amp; Redeem</h1>
+    <p>Clip cashback offers, then scan one receipt to redeem them all.</p>
+  </div>
+  <div class="clip-badge"><span id="clipCount">0</span> clipped</div>
+</header>
+
+<main>
+  <div id="configWarn" class="banner warn hidden">
+    Veryfi credentials aren't set yet — add them to <code>.env</code> and restart. Clipping works; redeeming needs the API.
+  </div>
+
+  <h2>Available offers</h2>
+  <div id="offers" class="grid"><p class="placeholder">Loading offers…</p></div>
+
+  <section class="panel">
+    <h2>Redeem — scan one receipt</h2>
+    <div id="clippedTray">
+      <p class="placeholder" style="color:var(--muted);font-size:14px">No offers clipped yet. Clip a few above, then scan a receipt that includes them.</p>
+    </div>
+
+    <div id="drop" class="drop" style="margin-top:14px">
+      <strong>Tap to photograph</strong> or click to upload your receipt
+    </div>
+    <input id="file" type="file" accept="image/*,application/pdf" capture="environment" class="hidden" />
+    <div id="preview" class="preview"></div>
+
+    <div class="row">
+      <button id="redeem" class="action btn-primary" disabled>Scan &amp; redeem clipped offers</button>
+      <button id="reset" class="action btn-ghost hidden">Clear receipt</button>
+    </div>
+
+    <div id="result"></div>
+  </section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const fmt=v=>"$"+Number(v||0).toFixed(2);
+const esc=s=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+let OFFERS=[];
+let clipped=new Set(JSON.parse(localStorage.getItem("clippedOffers")||"[]"));
+let chosenFile=null;
+
+function saveClipped(){localStorage.setItem("clippedOffers",JSON.stringify([...clipped]));}
+function isExhausted(o){return o.status==="exhausted";}
+function offerCashLabel(o){
+  const sizes=o.sizes||[];
+  if(sizes.length>1){
+    const max=Math.max(...sizes.map(s=>s.cashback||0));
+    return "up to "+fmt(max);
+  }
+  return fmt(o.cashback);
+}
+
+fetch("/api/config-status").then(r=>r.json()).then(d=>{if(!d.configured)$("configWarn").classList.remove("hidden");}).catch(()=>{});
+
+fetch("/api/offers").then(r=>r.json()).then(d=>{OFFERS=d;renderOffers();renderTray();}).catch(()=>{
+  $("offers").innerHTML=`<div class="banner err">Couldn't load offers. Is the server running?</div>`;
+});
+
+function renderOffers(){
+  $("offers").innerHTML=OFFERS.map(o=>{
+    const ex=isExhausted(o);
+    const isClipped=clipped.has(o.campaign_id);
+    let pill="";
+    if(ex) pill=`<span class="pill out">No longer available</span>`;
+    return `<div class="offer ${ex?'exhausted':''}">
+      ${pill}
+      <div class="icon">${o.icon||"🏷️"}</div>
+      <div class="cash">${ex?"—":offerCashLabel(o)+" back"}</div>
+      <div class="name">${esc(o.product)}</div>
+      <div class="brand">${esc(o.brand||"")}</div>
+      <div class="tag">${esc(o.tagline||"")}</div>
+      ${o.expires&&!ex?`<div class="exp">Expires ${esc(o.expires)}</div>`:""}
+      ${ex
+        ? `<button class="btn-clip" disabled style="opacity:.6;cursor:not-allowed">Budget exhausted</button>`
+        : `<button class="${isClipped?'btn-clipped':'btn-clip'}" onclick="toggleClip('${o.campaign_id}')">${isClipped?'✓ Clipped':'Clip offer'}</button>`}
+    </div>`;
+  }).join("");
+}
+
+window.toggleClip=function(id){
+  if(clipped.has(id))clipped.delete(id); else clipped.add(id);
+  saveClipped();renderOffers();renderTray();
+};
+
+function renderTray(){
+  $("clipCount").textContent=clipped.size;
+  const items=[...clipped].map(id=>OFFERS.find(o=>o.campaign_id===id)).filter(Boolean);
+  const tray=$("clippedTray");
+  if(!items.length){
+    tray.innerHTML=`<p class="placeholder" style="color:var(--muted);font-size:14px">No offers clipped yet. Clip a few above, then scan a receipt that includes them.</p>`;
+  }else{
+    tray.innerHTML=`<div style="font-size:14px;color:var(--muted)">Clipped offers to look for on your receipt:</div>
+      <div class="clipped-list">${items.map(o=>`<span class="chip">${o.icon||"🏷️"} ${esc(o.product)}
+        <button title="Remove" onclick="toggleClip('${o.campaign_id}')">✕</button></span>`).join("")}</div>`;
+  }
+  $("redeem").disabled=!(chosenFile&&clipped.size>0);
+}
+
+// ---- receipt capture ----
+const drop=$("drop"),fileInput=$("file"),preview=$("preview"),redeemBtn=$("redeem"),resetBtn=$("reset"),result=$("result");
+drop.addEventListener("click",()=>fileInput.click());
+["dragover","dragenter"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add("drag");}));
+["dragleave","drop"].forEach(e=>drop.addEventListener(e,()=>drop.classList.remove("drag")));
+drop.addEventListener("drop",ev=>{ev.preventDefault();if(ev.dataTransfer.files.length)handleFile(ev.dataTransfer.files[0]);});
+fileInput.addEventListener("change",()=>{if(fileInput.files.length)handleFile(fileInput.files[0]);});
+
+function handleFile(f){
+  chosenFile=f;resetBtn.classList.remove("hidden");
+  preview.innerHTML=f.type.startsWith("image/")
+    ?`<img src="${URL.createObjectURL(f)}" alt="receipt"/>`
+    :`<p class="placeholder">Selected: ${esc(f.name)}</p>`;
+  renderTray();
+}
+resetBtn.addEventListener("click",()=>{
+  chosenFile=null;fileInput.value="";preview.innerHTML="";result.innerHTML="";
+  resetBtn.classList.add("hidden");renderTray();
+});
+
+redeemBtn.addEventListener("click",async()=>{
+  if(!chosenFile||!clipped.size)return;
+  redeemBtn.disabled=true;redeemBtn.innerHTML=`<span class="spinner"></span>Reading receipt…`;
+  result.innerHTML=`<p class="placeholder">Sending to Veryfi and matching your clipped offers…</p>`;
+  const fd=new FormData();
+  fd.append("receipt",chosenFile);
+  fd.append("clipped",JSON.stringify([...clipped]));
+  try{
+    const resp=await fetch("/api/match-receipt",{method:"POST",body:fd});
+    const text=await resp.text();
+    let d;try{d=JSON.parse(text);}catch{
+      result.innerHTML=`<div class="banner err">Server returned a non-JSON response (HTTP ${resp.status}).</div><pre>${esc(text.slice(0,2000))}</pre>`;return;
+    }
+    if(!resp.ok){
+      const det=d.details?JSON.stringify(d.details,null,2):"";
+      result.innerHTML=`<div class="banner err">${esc(d.error||"Error")}</div>`+(det?`<pre>${esc(det)}</pre>`:"");
+    }else renderResult(d);
+  }catch(err){
+    result.innerHTML=`<div class="banner err">Could not reach the server: ${esc(String(err))}</div>`;
+  }finally{
+    redeemBtn.disabled=false;redeemBtn.textContent="Scan & redeem clipped offers";renderTray();
+  }
+});
+
+function renderResult(d){
+  const matched=d.matched||[],unmatched=d.unmatched||[];
+  let html=`<div class="earned"><div class="amt">${fmt(d.total_cashback)}</div>
+    <div>cashback earned from ${matched.length} of ${matched.length+unmatched.length} clipped offers</div>
+    ${d.vendor?`<div style="color:var(--muted);font-size:13px;margin-top:4px">${esc(d.vendor)}${d.date?" · "+esc(d.date):""}</div>`:""}</div>`;
+  html+=matched.map(m=>`<div class="result-item"><span class="ok-tick">✓</span>${m.icon||"🏷️"}
+    <span>${esc(m.product)}${m.size?` <span style="color:var(--muted)">(${esc(m.size)})</span>`:""}</span>
+    <span class="r-cash" style="color:var(--ok)">+${fmt(m.cashback)}</span></div>`).join("");
+  html+=unmatched.map(u=>`<div class="result-item"><span class="no-tick">—</span>${u.icon||"🏷️"}
+    <span style="color:var(--muted)">${esc(u.product)} — not found on this receipt</span></div>`).join("");
+  if(unmatched.length) html+=`<div class="banner warn">${unmatched.length} clipped offer(s) weren't found on this receipt. They stay clipped for next time.</div>`;
+  html+=`<details><summary>Matching detail (UPCs Veryfi read from the receipt)</summary>
+    <pre>${esc(JSON.stringify({line_item_count:d.line_item_count,receipt_upcs:d.receipt_upcs},null,2))}</pre></details>`;
+  result.innerHTML=html;
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Veryfi Receipt Capture — Prototype</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --ink: #1c2430;
+    --muted: #6b7686;
+    --accent: #2f6df6;
+    --accent-dark: #2356cc;
+    --line: #e4e8ee;
+    --ok: #1f9d57;
+    --err: #d23f3f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  header { padding: 24px 20px 8px; max-width: 920px; margin: 0 auto; }
+  header h1 { margin: 0; font-size: 22px; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+  main { max-width: 920px; margin: 0 auto; padding: 16px 20px 60px;
+         display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line);
+          border-radius: 14px; padding: 20px; }
+  .card h2 { margin: 0 0 14px; font-size: 15px; text-transform: uppercase;
+             letter-spacing: .04em; color: var(--muted); }
+  .drop {
+    border: 2px dashed var(--line); border-radius: 12px; padding: 28px 16px;
+    text-align: center; color: var(--muted); cursor: pointer; transition: .15s;
+  }
+  .drop:hover, .drop.drag { border-color: var(--accent); color: var(--accent); background: #f3f7ff; }
+  .preview { margin-top: 16px; text-align: center; }
+  .preview img { max-width: 100%; max-height: 320px; border-radius: 10px; border: 1px solid var(--line); }
+  .row { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+  button {
+    appearance: none; border: 0; border-radius: 10px; padding: 11px 18px;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-dark); }
+  .btn-primary:disabled { background: #aebfdf; cursor: not-allowed; }
+  .btn-ghost { background: #eef1f5; color: var(--ink); }
+  .hidden { display: none; }
+  .banner { border-radius: 10px; padding: 10px 14px; font-size: 14px; margin-bottom: 14px; }
+  .banner.warn { background: #fff5e6; color: #8a5a00; border: 1px solid #ffe0a6; }
+  .banner.err { background: #fde9e9; color: var(--err); border: 1px solid #f6c6c6; }
+  .summary dt { color: var(--muted); font-size: 13px; }
+  .summary dd { margin: 0 0 12px; font-size: 17px; font-weight: 600; }
+  .summary { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 20px; margin: 0 0 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 6px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; }
+  details { margin-top: 16px; }
+  summary { cursor: pointer; color: var(--accent); font-size: 14px; }
+  pre { background: #0f1623; color: #d7e0ef; padding: 14px; border-radius: 10px;
+        overflow: auto; font-size: 12.5px; max-height: 360px; }
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff;
+             border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite;
+             vertical-align: -3px; margin-right: 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .placeholder { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Receipt Capture Prototype</h1>
+  <p>Capture or upload a receipt → parsed by the Veryfi API → results below.</p>
+</header>
+<main>
+  <section class="card">
+    <h2>1 · Capture receipt</h2>
+    <div id="configWarn" class="banner warn hidden">
+      Veryfi credentials aren't set yet. Add them to <code>.env</code> and restart the server.
+    </div>
+
+    <div id="drop" class="drop">
+      <strong>Tap to take a photo</strong> or click to choose a file<br />
+      <span style="font-size:13px">JPG, PNG, PDF, HEIC… up to 20 MB</span>
+    </div>
+    <!-- capture="environment" opens the rear camera on phones -->
+    <input id="file" type="file" accept="image/*,application/pdf" capture="environment" class="hidden" />
+
+    <div id="preview" class="preview"></div>
+
+    <div class="row">
+      <button id="send" class="btn-primary" disabled>Parse receipt</button>
+      <button id="reset" class="btn-ghost hidden">Clear</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>2 · Parsed output</h2>
+    <div id="result"><p class="placeholder">No receipt processed yet.</p></div>
+  </section>
+
+  <section class="card" style="grid-column: 1 / -1;">
+    <h2>Or · Scan a product barcode</h2>
+    <p class="placeholder" style="margin-top:-6px">
+      Validate a single product against active offers (UPC-A / EAN-13). Decoding runs
+      entirely in your browser — only the barcode number is sent to the server, never an image.
+    </p>
+    <div id="reader" style="max-width:360px;margin:6px auto;"></div>
+    <div class="row">
+      <button id="scanStart" class="btn-primary">Start camera</button>
+      <button id="scanStop" class="btn-ghost hidden">Stop camera</button>
+    </div>
+    <div class="row" style="align-items:center;gap:8px">
+      <span class="placeholder">No camera handy? Type a UPC:</span>
+      <input id="manualUpc" inputmode="numeric" placeholder="036000291452"
+             style="padding:9px 10px;border:1px solid var(--line);border-radius:8px;width:170px" />
+      <button id="manualCheck" class="btn-ghost">Check</button>
+    </div>
+    <div id="scanResult"></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const drop = $("drop"), fileInput = $("file"), preview = $("preview");
+const sendBtn = $("send"), resetBtn = $("reset"), result = $("result");
+let chosenFile = null;
+
+// Warn if credentials are missing.
+fetch("/api/config-status").then(r => r.json()).then(d => {
+  if (!d.configured) $("configWarn").classList.remove("hidden");
+}).catch(() => {});
+
+drop.addEventListener("click", () => fileInput.click());
+["dragover","dragenter"].forEach(e => drop.addEventListener(e, ev => {
+  ev.preventDefault(); drop.classList.add("drag");
+}));
+["dragleave","drop"].forEach(e => drop.addEventListener(e, () => drop.classList.remove("drag")));
+drop.addEventListener("drop", ev => {
+  ev.preventDefault();
+  if (ev.dataTransfer.files.length) handleFile(ev.dataTransfer.files[0]);
+});
+fileInput.addEventListener("change", () => {
+  if (fileInput.files.length) handleFile(fileInput.files[0]);
+});
+
+function handleFile(file) {
+  chosenFile = file;
+  sendBtn.disabled = false;
+  resetBtn.classList.remove("hidden");
+  if (file.type.startsWith("image/")) {
+    const url = URL.createObjectURL(file);
+    preview.innerHTML = `<img src="${url}" alt="receipt preview" />`;
+  } else {
+    preview.innerHTML = `<p class="placeholder">Selected: ${file.name}</p>`;
+  }
+}
+
+resetBtn.addEventListener("click", () => {
+  chosenFile = null; fileInput.value = "";
+  preview.innerHTML = ""; sendBtn.disabled = true;
+  resetBtn.classList.add("hidden");
+  result.innerHTML = `<p class="placeholder">No receipt processed yet.</p>`;
+});
+
+sendBtn.addEventListener("click", async () => {
+  if (!chosenFile) return;
+  sendBtn.disabled = true;
+  sendBtn.innerHTML = `<span class="spinner"></span>Parsing…`;
+  result.innerHTML = `<p class="placeholder">Sending to Veryfi…</p>`;
+
+  const fd = new FormData();
+  fd.append("receipt", chosenFile);
+  try {
+    const resp = await fetch("/api/process", { method: "POST", body: fd });
+    // Read as text first so a non-JSON response (e.g. an error page) is still shown.
+    const text = await resp.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch {
+      result.innerHTML = `<div class="banner err">Server returned a non-JSON response (HTTP ${resp.status}).</div>` +
+        `<pre>${escapeHtml(text.slice(0, 3000) || "(empty response)")}</pre>`;
+      return;
+    }
+    if (!resp.ok) {
+      const detail = data.details ? JSON.stringify(data.details, null, 2) : (data.body || "");
+      result.innerHTML = `<div class="banner err">${escapeHtml(data.error || "Error")}</div>` +
+        (detail ? `<pre>${escapeHtml(detail)}</pre>` : "");
+    } else {
+      render(data);
+    }
+  } catch (err) {
+    result.innerHTML = `<div class="banner err">Could not reach the server. Is it running at this address?<br>${escapeHtml(String(err))}</div>`;
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.textContent = "Parse receipt";
+  }
+});
+
+function money(v, cur) {
+  if (v === null || v === undefined) return "—";
+  return (cur ? cur + " " : "") + Number(v).toFixed(2);
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+}
+
+function render(d) {
+  const cur = d.currency_code || "";
+  const vendor = (d.vendor && d.vendor.name) || "—";
+  const items = Array.isArray(d.line_items) ? d.line_items : [];
+
+  let rows = items.map(li => `
+    <tr>
+      <td>${escapeHtml(li.description || "—")}</td>
+      <td class="num">${li.quantity ?? "—"}</td>
+      <td class="num">${money(li.total, "")}</td>
+    </tr>`).join("");
+  if (!rows) rows = `<tr><td colspan="3" class="placeholder">No line items returned.</td></tr>`;
+
+  result.innerHTML = `
+    <dl class="summary">
+      <div><dt>Vendor</dt><dd>${escapeHtml(vendor)}</dd></div>
+      <div><dt>Date</dt><dd>${escapeHtml(d.date || "—")}</dd></div>
+      <div><dt>Category</dt><dd>${escapeHtml(d.category || "—")}</dd></div>
+      <div><dt>Document type</dt><dd>${escapeHtml(d.document_type || "—")}</dd></div>
+      <div><dt>Subtotal</dt><dd>${money(d.subtotal, cur)}</dd></div>
+      <div><dt>Tax</dt><dd>${money(d.tax, cur)}</dd></div>
+      <div><dt>Tip</dt><dd>${money(d.tip, cur)}</dd></div>
+      <div><dt>Total</dt><dd>${money(d.total, cur)}</dd></div>
+    </dl>
+    <table>
+      <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Total</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <details>
+      <summary>View raw JSON</summary>
+      <pre>${escapeHtml(JSON.stringify(d, null, 2))}</pre>
+    </details>`;
+}
+
+/* ---------- Barcode scan ---------- */
+const scanStart = $("scanStart"), scanStop = $("scanStop"), scanResult = $("scanResult");
+const manualUpc = $("manualUpc"), manualCheck = $("manualCheck");
+let qr = null;
+
+function resetScanButtons() {
+  scanStart.classList.remove("hidden");
+  scanStop.classList.add("hidden");
+}
+
+async function checkUpc(upc) {
+  scanResult.innerHTML = `<p class="placeholder">Checking ${escapeHtml(upc)}…</p>`;
+  try {
+    const r = await fetch("/api/check-offer?upc=" + encodeURIComponent(upc));
+    const d = await r.json();
+    if (d.eligible) {
+      const cash = d.cashback != null ? `$${Number(d.cashback).toFixed(2)} cashback` : "";
+      scanResult.innerHTML =
+        `<div class="banner" style="background:#e7f7ee;color:#127a43;border:1px solid #b7e4c9;margin-top:14px">
+           ✓ <strong>Eligible:</strong> ${escapeHtml(d.product || "")} ${cash ? "— " + cash : ""}<br>
+           <small>UPC ${escapeHtml(d.scanned_upc)} · ${escapeHtml(d.brand || "")} · ${escapeHtml(d.campaign_id || "")}</small>
+         </div>`;
+    } else {
+      scanResult.innerHTML =
+        `<div class="banner warn" style="margin-top:14px">
+           No active offer for UPC <strong>${escapeHtml(d.scanned_upc || upc)}</strong>.
+           Add it to <code>offers.json</code> to test a match.
+         </div>`;
+    }
+  } catch (err) {
+    scanResult.innerHTML = `<div class="banner err" style="margin-top:14px">Lookup failed: ${escapeHtml(String(err))}</div>`;
+  }
+}
+
+scanStart.addEventListener("click", async () => {
+  if (typeof Html5Qrcode === "undefined") {
+    scanResult.innerHTML = `<div class="banner err" style="margin-top:14px">Scanner library didn't load (check your connection).</div>`;
+    return;
+  }
+  qr = new Html5Qrcode("reader");
+  scanStart.classList.add("hidden");
+  scanStop.classList.remove("hidden");
+  scanResult.innerHTML = "";
+  const config = {
+    fps: 10,
+    qrbox: { width: 280, height: 160 },
+    formatsToSupport: [
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8,
+    ],
+  };
+  try {
+    await qr.start({ facingMode: "environment" }, config,
+      async (decodedText) => {
+        try { await qr.stop(); } catch {}
+        resetScanButtons();
+        checkUpc(decodedText);
+      },
+      () => {} // per-frame "not found" — ignore
+    );
+  } catch (err) {
+    scanResult.innerHTML = `<div class="banner err" style="margin-top:14px">Camera error: ${escapeHtml(String(err))}<br><small>Camera needs http://localhost or HTTPS, and permission to access it.</small></div>`;
+    resetScanButtons();
+  }
+});
+
+scanStop.addEventListener("click", async () => {
+  if (qr) { try { await qr.stop(); } catch {} }
+  resetScanButtons();
+});
+
+manualCheck.addEventListener("click", () => {
+  const v = manualUpc.value.trim();
+  if (v) checkUpc(v);
+});
+manualUpc.addEventListener("keydown", (e) => { if (e.key === "Enter") manualCheck.click(); });
+</script>
+</body>
+</html>
