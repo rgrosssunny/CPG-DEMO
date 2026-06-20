@@ -33,10 +33,14 @@
     lumaMin: 40,
     lumaMax: 230,
     glareMax: 0.14,
-    edgeDetection: true,   // OpenCV.js: detect receipt edges + deskew
-    minQuadArea: 0.12,
-    edgeStrength: 1.6,     // a column's gradient must exceed mean * this to be an edge
-    bottomDrop: 0.6,       // row brightness < receiptMean * this => background (edge)
+    edgeDetection: true,   // OpenCV.js: detect receipt edges
+    // Fixed bounding box (fractions of the viewport). The box never moves; the
+    // user aligns the receipt to it. An edge lights green when the receipt's
+    // matching edge lands within `alignTol` of the box edge.
+    box: { left: 0.08, right: 0.92, top: 0.11 },
+    alignTol: 0.12,        // ±fraction within which an edge counts as aligned (green)
+    contrastMin: 26,       // min brightness range for a band to exist (vs blank scene)
+    textureMin: 0.035,     // min Canny edge-density in the band => text => real receipt
     pollIntervalMs: 2000,
     maxPolls: 60,
     userId: "demo-user",
@@ -215,15 +219,19 @@
 .rcap-root{position:fixed;inset:0;z-index:2147483000;background:#000;overflow:hidden;
   font-family:Manrope,system-ui,-apple-system,sans-serif;color:#fff;-webkit-user-select:none;user-select:none}
 .rcap-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
-.rcap-reticle{position:absolute;top:9%;bottom:11%;left:8%;right:8%;pointer-events:none}
-/* per-edge rails */
+.rcap-reticle{position:absolute;top:11%;bottom:0;left:8%;right:8%;pointer-events:none}
+/* fixed bounding-box edges — positions never change; only the color toggles */
 .rcap-rail{position:absolute;z-index:3;pointer-events:none}
-.rcap-rail.v{top:9%;bottom:0;width:0;border-left:3px solid ${AMBER}}
+.rcap-rail.v{top:11%;bottom:0;width:0;border-left:3px solid ${AMBER}}
 .rcap-rail.v.on{border-left-color:${GREEN}}
-.rcap-rail.h{height:0;border-top:3px solid ${GREEN}}
+.rcap-rail.v.left{left:8%}
+.rcap-rail.v.right{left:92%}
+.rcap-rail.h{left:8%;width:84%;height:0;border-top:3px solid ${AMBER}}
+.rcap-rail.h.on{border-top-color:${GREEN}}
+.rcap-rail.top{top:11%}
 .rcap-pill{position:absolute;background:${AMBER};color:#1a1a1a;font-size:11px;font-weight:700;
   padding:5px 9px;border-radius:999px;white-space:nowrap;display:flex;align-items:center;gap:5px}
-.rcap-rail.on .rcap-pill,.rcap-rail.h .rcap-pill{background:${GREEN};color:#fff}
+.rcap-rail.on .rcap-pill{background:${GREEN};color:#fff}
 .rcap-pill .badge{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;
   background:rgba(0,0,0,.18);font-size:10px;line-height:1}
 .rcap-rail.v .rcap-pill{top:42%;writing-mode:vertical-rl}
@@ -365,31 +373,40 @@
       }, 200);
     }
 
-    /** Position + color the per-edge rails from a detection result. */
+    /** Color the FIXED box edges: green ✓ when the receipt's matching edge lands
+     *  within tolerance of that box edge (so the receipt fills the box at a
+     *  readable size); amber ? otherwise. The box itself never moves. The bottom
+     *  edge is the only dynamic line — shown only when the receipt's bottom is
+     *  detected in view. */
     _updateEdges(edges, cap) {
       const u = this._ui; if (!u) return;
+      const o = this.opts, VW = global.innerWidth, VH = global.innerHeight;
       const cont = this.segments.length > 0 && this._mode === "live";
-      if (!edges || !cap) { Object.values(u.rails).forEach((r) => (r.style.display = "none")); return; }
-      const sx = global.innerWidth / cap.width, sy = global.innerHeight / cap.height;
-      const setBadge = (r, on) => { r.classList.toggle("on", on); r.querySelector(".badge").textContent = on ? "✓" : "?"; };
+      const setOn = (r, on) => { r.classList.toggle("on", on); r.querySelector(".badge").textContent = on ? "✓" : "?"; };
 
-      // Vertical side rails always show (green ✓ if detected, amber ? if not).
-      u.rails.left.style.left = (edges.left.x * sx) + "px"; setBadge(u.rails.left, edges.left.on); u.rails.left.style.display = "block";
-      u.rails.right.style.left = (edges.right.x * sx) + "px"; setBadge(u.rails.right, edges.right.on); u.rails.right.style.display = "block";
+      // Side rails + top edge are always visible (the fixed guide); only color toggles.
+      u.rails.left.style.display = "block";
+      u.rails.right.style.display = "block";
+      u.rails.top.style.display = cont ? "none" : "block";   // sliver replaces top on continuation
 
-      const x1 = edges.left.x * sx, x2 = edges.right.x * sx;
-      // Bottom edge only when the receipt's end is actually in view.
-      if (edges.bottom.on) {
-        u.rails.bottom.style.top = (edges.bottom.y * sy) + "px";
-        u.rails.bottom.style.left = x1 + "px"; u.rails.bottom.style.width = (x2 - x1) + "px";
-        u.rails.bottom.querySelector(".badge").textContent = "✓"; u.rails.bottom.style.display = "block";
-      } else u.rails.bottom.style.display = "none";
-      // Top edge only on the first section (sliver replaces it on continuation).
-      if (!cont && edges.top.on) {
-        u.rails.top.style.top = (edges.top.y * sy) + "px";
-        u.rails.top.style.left = x1 + "px"; u.rails.top.style.width = (x2 - x1) + "px";
-        u.rails.top.querySelector(".badge").textContent = "✓"; u.rails.top.style.display = "block";
-      } else u.rails.top.style.display = "none";
+      const boxL = VW * o.box.left, boxR = VW * o.box.right, boxT = VH * o.box.top;
+      const tolX = VW * o.alignTol, tolY = VH * o.alignTol;
+      let lOn = false, rOn = false, tOn = false;
+
+      if (edges && cap) {
+        const sx = VW / cap.width, sy = VH / cap.height;
+        // green only when the edge is in view AND aligned to the fixed box edge
+        if (edges.left.on) lOn = Math.abs(edges.left.x * sx - boxL) <= tolX;
+        if (edges.right.on) rOn = Math.abs(edges.right.x * sx - boxR) <= tolX;
+        if (!cont && edges.top.on) tOn = Math.abs(edges.top.y * sy - boxT) <= tolY;
+        if (edges.bottom.on) {
+          u.rails.bottom.style.top = (edges.bottom.y * sy) + "px";
+          setOn(u.rails.bottom, true); u.rails.bottom.style.display = "block";
+        } else u.rails.bottom.style.display = "none";
+      } else {
+        u.rails.bottom.style.display = "none";
+      }
+      setOn(u.rails.left, lOn); setOn(u.rails.right, rOn); setOn(u.rails.top, tOn);
     }
 
     /* ------------------------------------------------ edge detection (CV) -- */
@@ -427,13 +444,13 @@
      *  off-screen (amber ?). Returns {left,right,top,bottom (each {x|y,on}),w,h}.*/
     _detectEdges(canvas) {
       if (!this._cvReady || !global.cv) return null;
-      const cv = global.cv;
-      let src, gray, colM, rowM;
-      const band = (arr, len, lo) => {     // first/last index above a threshold
-        let lo2 = 1e9, hi2 = -1e9;
-        for (let i = 0; i < len; i++) { const v = arr[i]; if (v < lo2) lo2 = v; if (v > hi2) hi2 = v; }
-        if (hi2 - lo2 < 12) return null;   // no contrast -> no band
-        const thr = lo2 + (hi2 - lo2) * 0.45;
+      const cv = global.cv, o = this.opts;
+      let src, gray, grayB, colM, rowM, ed;
+      const band = (arr, len, minContrast) => {  // first/last index above a brightness threshold
+        let lo = 1e9, hi = -1e9;
+        for (let i = 0; i < len; i++) { const v = arr[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+        if (hi - lo < minContrast) return null;   // not enough contrast => no band
+        const thr = lo + (hi - lo) * 0.45;
         let s = -1, e = -1;
         for (let i = 0; i < len; i++) if (arr[i] > thr) { if (s < 0) s = i; e = i; }
         return s < 0 ? null : { s, e };
@@ -441,29 +458,39 @@
       try {
         src = cv.imread(canvas); gray = new cv.Mat();
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-        cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+        grayB = new cv.Mat(); cv.GaussianBlur(gray, grayB, new cv.Size(5, 5), 0);
         const w = gray.cols, h = gray.rows;
 
-        colM = new cv.Mat(); cv.reduce(gray, colM, 0, cv.REDUCE_AVG, cv.CV_32F);   // 1 x w
-        const cb = band(colM.data32F, w);
+        // Column brightness band (receipt is lighter than the background).
+        colM = new cv.Mat(); cv.reduce(grayB, colM, 0, cv.REDUCE_AVG, cv.CV_32F);
+        const cb = band(colM.data32F, w, o.contrastMin);
         if (!cb || cb.e - cb.s < w * 0.12) return null;
+
+        // GATE: the band must be text-dense (a real receipt) — not a blank bright
+        // surface, hand, or wall. Canny edge density inside the band.
+        const bx = Math.max(0, cb.s), bw = Math.max(4, Math.min(w - bx, cb.e - cb.s));
+        ed = new cv.Mat();
+        const roiE = gray.roi(new cv.Rect(bx, 0, bw, h));
+        cv.Canny(roiE, ed, 60, 180); roiE.delete();
+        const density = cv.countNonZero(ed) / (bw * h);
+        if (density < o.textureMin) return null;   // not enough text => not a receipt
+
         const leftOn = cb.s > w * 0.03, rightOn = cb.e < w * 0.97;
         const left = { x: leftOn ? cb.s : Math.round(w * 0.08), on: leftOn };
         const right = { x: rightOn ? cb.e : Math.round(w * 0.92), on: rightOn };
 
-        // Row brightness within the detected column band -> top/bottom edges.
+        // Row brightness within the band -> top/bottom edges (in view or not).
         let top = { y: 0, on: false }, bottom = { y: h, on: false };
-        const bx = Math.max(0, cb.s), bw = Math.max(4, Math.min(w - bx, cb.e - cb.s));
-        const roi = gray.roi(new cv.Rect(bx, 0, bw, h));
+        const roi = grayB.roi(new cv.Rect(bx, 0, bw, h));
         rowM = new cv.Mat(); cv.reduce(roi, rowM, 1, cv.REDUCE_AVG, cv.CV_32F); roi.delete();
-        const rb = band(rowM.data32F, h);
+        const rb = band(rowM.data32F, h, 12);
         if (rb) {
           if (rb.s > h * 0.03) top = { y: rb.s, on: true };
           if (rb.e < h * 0.97) bottom = { y: rb.e, on: true };
         }
         return { left, right, top, bottom, w, h };
       } catch (_) { return null; }
-      finally { [src, gray, colM, rowM].forEach((m) => { if (m && m.delete) { try { m.delete(); } catch (_) {} } }); }
+      finally { [src, gray, grayB, colM, rowM, ed].forEach((m) => { if (m && m.delete) { try { m.delete(); } catch (_) {} } }); }
     }
 
     /* ---------------------------------------------------- capture actions -- */
@@ -471,106 +498,35 @@
 
     _doCapture() {
       try {
-        let ok = false;
-        if (this._cvReady && this.opts.edgeDetection) {
-          ok = this._captureDeskewed();      // short receipt fully in frame
-          if (!ok) ok = this._captureStrip(); // long receipt: strip between side edges
-        }
-        if (!ok) this.capture();             // fixed-rect fallback
+        if (!this._captureBox()) this.capture();   // capture() = fixed-rect fallback
         this._flashAnim();
         this._enterReview();
       } catch (err) { this._coach(err.message); }
     }
 
-    /** Vertical strip between the side edges, cropped to the bottom edge when
-     *  it's in view (final section), else full height. */
-    _captureStrip() {
+    /** Capture the FIXED bounding-box region (consistent size for OCR), cropped
+     *  down to the receipt's bottom edge when it's detected in view. */
+    _captureBox() {
       const hi = this._coverCropCanvas(1600);
       if (!hi) return false;
-      const e = this._detectEdges(hi);
-      if (!e) return false;
-      const pad = Math.round(hi.width * 0.01);
-      const x = Math.max(0, e.left.x - pad);
-      const w = Math.min(hi.width - x, (e.right.x - e.left.x) + pad * 2);
-      if (w < hi.width * 0.15) return false;
-      const top = e.top.on ? Math.max(0, e.top.y - pad) : 0;
-      const bottom = e.bottom.on ? Math.min(hi.height, e.bottom.y + pad) : hi.height;
-      const h = bottom - top; if (h < 40) return false;
+      const o = this.opts;
+      const x = Math.round(hi.width * o.box.left);
+      const w = Math.round(hi.width * (o.box.right - o.box.left));
+      const top = Math.round(hi.height * o.box.top);
+      let bottom = hi.height;
+      const e = this._cvReady ? this._detectEdges(hi) : null;
+      if (e && e.bottom.on) bottom = Math.min(hi.height, Math.round(e.bottom.y) + Math.round(hi.width * 0.01));
+      const h = bottom - top;
+      if (w < 10 || h < 40) return false;
       const out = document.createElement("canvas");
-      out.width = Math.round(w); out.height = Math.round(h);
-      out.getContext("2d").drawImage(hi, x, top, w, h, 0, 0, out.width, out.height);
+      out.width = w; out.height = h;
+      out.getContext("2d").drawImage(hi, x, top, w, h, 0, 0, w, h);
       const ctx = out.getContext("2d");
       const luminance = this._screenAndGrayscale(ctx, out);
-      if (luminance < this.opts.lumaMin) throw new RangeError(`Too dark (${Math.round(luminance)})`);
-      if (luminance > this.opts.lumaMax) throw new RangeError(`Too bright (${Math.round(luminance)})`);
+      if (luminance < o.lumaMin) throw new RangeError(`Too dark (${Math.round(luminance)})`);
+      if (luminance > o.lumaMax) throw new RangeError(`Too bright (${Math.round(luminance)})`);
       this.segments.push(out);
-      this._emit("segment", { count: this.segments.length, luminance, strip: true });
-      return true;
-    }
-
-    /** Detect the largest 4-point convex quad and perspective de-warp it. */
-    _detectQuad(canvas) {
-      if (!this._cvReady || !global.cv) return null;
-      const cv = global.cv;
-      let src, gray, edged, k, contours, hier;
-      try {
-        src = cv.imread(canvas); gray = new cv.Mat(); edged = new cv.Mat();
-        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-        cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
-        cv.Canny(gray, edged, 50, 150);
-        k = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
-        cv.dilate(edged, edged, k);
-        contours = new cv.MatVector(); hier = new cv.Mat();
-        cv.findContours(edged, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-        let best = null, bestArea = 0;
-        for (let i = 0; i < contours.size(); i++) {
-          const cnt = contours.get(i), peri = cv.arcLength(cnt, true);
-          const approx = new cv.Mat(); cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
-          if (approx.rows === 4 && cv.isContourConvex(approx)) {
-            const a = cv.contourArea(approx);
-            if (a > bestArea) { bestArea = a; const pts = []; for (let j = 0; j < 4; j++) pts.push({ x: approx.data32S[j * 2], y: approx.data32S[j * 2 + 1] }); best = pts; }
-          }
-          approx.delete(); cnt.delete();
-        }
-        if (!best) return null;
-        const areaFrac = bestArea / (canvas.width * canvas.height);
-        if (!(areaFrac > 0) || areaFrac > 0.999) return null;
-        return { c: this._orderCorners(best), areaFrac };
-      } catch (_) { return null; }
-      finally { [src, gray, edged, k, contours, hier].forEach((m) => { if (m && m.delete) { try { m.delete(); } catch (_) {} } }); }
-    }
-    _orderCorners(pts) {
-      const sum = (p) => p.x + p.y, diff = (p) => p.y - p.x;
-      const bySum = [...pts].sort((a, b) => sum(a) - sum(b));
-      const byDiff = [...pts].sort((a, b) => diff(a) - diff(b));
-      return { topLeftCorner: bySum[0], bottomRightCorner: bySum[3], topRightCorner: byDiff[0], bottomLeftCorner: byDiff[3] };
-    }
-    _captureDeskewed() {
-      if (!this._cvReady || !global.cv) return false;
-      const cv = global.cv;
-      const cap = this._coverCropCanvas(1600); if (!cap) return false;
-      const det = this._detectQuad(cap);
-      if (!det || det.areaFrac < this.opts.minQuadArea) return false;
-      const c = det.c, d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-      const W = Math.max(40, Math.round((d(c.topLeftCorner, c.topRightCorner) + d(c.bottomLeftCorner, c.bottomRightCorner)) / 2));
-      const H = Math.max(40, Math.round((d(c.topLeftCorner, c.bottomLeftCorner) + d(c.topRightCorner, c.bottomRightCorner)) / 2));
-      const out = document.createElement("canvas");
-      let src, dst, sT, dT, M;
-      try {
-        src = cv.imread(cap); dst = new cv.Mat();
-        sT = cv.matFromArray(4, 1, cv.CV_32FC2, [c.topLeftCorner.x, c.topLeftCorner.y, c.topRightCorner.x, c.topRightCorner.y, c.bottomRightCorner.x, c.bottomRightCorner.y, c.bottomLeftCorner.x, c.bottomLeftCorner.y]);
-        dT = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, W, 0, W, H, 0, H]);
-        M = cv.getPerspectiveTransform(sT, dT);
-        cv.warpPerspective(src, dst, M, new cv.Size(W, H), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
-        cv.imshow(out, dst);
-      } catch (_) { return false; }
-      finally { [src, dst, sT, dT, M].forEach((m) => { if (m && m.delete) { try { m.delete(); } catch (_) {} } }); }
-      const ctx = out.getContext("2d");
-      const luminance = this._screenAndGrayscale(ctx, out);
-      if (luminance < this.opts.lumaMin) throw new RangeError(`Too dark (${Math.round(luminance)})`);
-      if (luminance > this.opts.lumaMax) throw new RangeError(`Too bright (${Math.round(luminance)})`);
-      this.segments.push(out);
-      this._emit("segment", { count: this.segments.length, luminance, deskewed: true });
+      this._emit("segment", { count: this.segments.length, luminance, box: true });
       return true;
     }
 
