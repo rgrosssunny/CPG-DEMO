@@ -635,16 +635,52 @@
     removeLastSegment() { this.segments.pop(); this._emit("segment", { count: this.segments.length }); }
 
     /* ------------------------------------------- stitch + transmission ---- */
+    /** Combine sections into ONE clean document. Sections overlap (the user
+     *  lines the next one up with the sliver of the previous), so a naive
+     *  top-to-bottom concat duplicates the shared band and confuses OCR.
+     *  We template-match each section's top against the previous section's
+     *  bottom and draw the shared band only once. */
     stitch() {
       if (!this.segments.length) throw new Error("No captured pages to stitch.");
       if (this.segments.length === 1) return this.segments[0];
-      const width = Math.max(...this.segments.map((c) => c.width));
-      const height = this.segments.reduce((s, c) => s + c.height, 0);
-      const target = document.createElement("canvas");
-      target.width = width; target.height = height;
-      const ctx = target.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, width, height);
-      let y = 0; for (const seg of this.segments) { ctx.drawImage(seg, 0, y); y += seg.height; }
-      return target;
+      let result = this.segments[0];
+      for (let i = 1; i < this.segments.length; i++) result = this._stitchPair(result, this.segments[i]);
+      return result;
+    }
+
+    /** Place B below A, removing the overlapping band so it appears once. */
+    _stitchPair(A, B) {
+      let placeY = A.height;   // default: butt-join (no overlap removed)
+      if (this._cvReady && global.cv) {
+        const cv = global.cv;
+        let matA, matB, gA, gB, aRoi, tRoi, res;
+        try {
+          const W = Math.min(A.width, B.width);
+          const tH = Math.max(8, Math.min(Math.round(B.height * 0.35), Math.round(A.height * 0.5)));
+          const searchH = Math.min(A.height, Math.round(A.height * 0.6) + tH);
+          if (W > 8 && searchH > tH) {
+            matA = cv.imread(A); matB = cv.imread(B);
+            gA = new cv.Mat(); gB = new cv.Mat();
+            cv.cvtColor(matA, gA, cv.COLOR_RGBA2GRAY); cv.cvtColor(matB, gB, cv.COLOR_RGBA2GRAY);
+            aRoi = gA.roi(new cv.Rect(0, A.height - searchH, W, searchH));
+            tRoi = gB.roi(new cv.Rect(0, 0, W, tH));
+            res = new cv.Mat();
+            cv.matchTemplate(aRoi, tRoi, res, cv.TM_CCOEFF_NORMED);
+            const mm = cv.minMaxLoc(res);
+            if (mm.maxVal > 0.45) placeY = (A.height - searchH) + mm.maxLoc.y;  // overlap found
+          }
+        } catch (_) { placeY = A.height; }
+        finally { [matA, matB, gA, gB, aRoi, tRoi, res].forEach((m) => { if (m && m.delete) { try { m.delete(); } catch (_) {} } }); }
+      }
+      const outW = Math.max(A.width, B.width);
+      const outH = placeY + B.height;
+      const out = document.createElement("canvas");
+      out.width = outW; out.height = outH;
+      const ctx = out.getContext("2d");
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, outW, outH);
+      ctx.drawImage(A, 0, 0);
+      ctx.drawImage(B, 0, placeY);   // overlapping band [placeY..A.height] is covered once by B
+      return out;
     }
     _toJpegBlob(canvas) {
       return new Promise((resolve, reject) => {

@@ -265,6 +265,7 @@ def normalize_textract(resp):
                 if row:
                     line_items.append(row)
 
+    line_items = _clean_line_items(line_items)
     avg_conf = round(sum(confidences) / len(confidences), 2) if confidences else None
     return {
         "vendor": {"name": vendor},
@@ -277,6 +278,35 @@ def normalize_textract(resp):
         "avg_confidence": avg_conf,
         "source": "aws-textract",
     }
+
+
+# Summary/payment terms that Textract sometimes mis-classifies as line items.
+_LINEITEM_NOISE = re.compile(
+    r"\b(savings|subtotal|sub total|tax|total|net sales|balance|change|"
+    r"visa|mastercard|amex|debit|credit|chip card|paid|approval|auth|tender|"
+    r"aid|account|ref|reg)\b", re.I)
+
+
+def _clean_line_items(items):
+    """Drop Textract's phantom line items (garbled multi-line fragments, summary
+    or payment rows) and de-duplicate by description, so the count matches the
+    real products on the receipt. AnalyzeExpense over-segments multi-line entries
+    ("Qty .. @ ../lb", "Savings with Prime") into junk rows — strip those here."""
+    cleaned, seen = [], set()
+    for li in items:
+        desc = (li.get("description") or "").strip()
+        if not desc or "\n" in desc:          # multi-line => fragment, not a product
+            continue
+        if not re.search(r"[A-Za-z]", desc):   # must contain letters
+            continue
+        if _LINEITEM_NOISE.search(desc):        # summary / payment line
+            continue
+        key = re.sub(r"\s+", " ", desc).lower()
+        if key in seen:                          # duplicate description
+            continue
+        seen.add(key)
+        cleaned.append(li)
+    return cleaned
 
 
 def _reject(job, reason, result=None):
