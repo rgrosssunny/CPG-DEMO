@@ -124,7 +124,6 @@
       frame.className = "rcap-frame";
       frame.innerHTML =
         '<span class="rcap-corner tl"></span><span class="rcap-corner tr"></span>' +
-        '<span class="rcap-corner bl"></span><span class="rcap-corner br"></span>' +
         '<span class="rcap-edge top">Receipt edge</span>' +
         '<span class="rcap-edge left">Receipt edge</span>' +
         '<span class="rcap-edge right">Receipt edge</span>';
@@ -168,6 +167,12 @@
       const coach = document.createElement("div");
       coach.className = "rcap-coach";
       root.appendChild(coach);
+
+      // Persistent reassurance for long receipts (LIVE only)
+      const hint = document.createElement("div");
+      hint.className = "rcap-hint";
+      hint.textContent = "Have a long receipt? You can add more sections next.";
+      root.appendChild(hint);
 
       // Help panel
       const help = document.createElement("div");
@@ -231,14 +236,16 @@
 .rcap-root{position:fixed;inset:0;z-index:2147483000;background:#000;overflow:hidden;
   font-family:Manrope,system-ui,-apple-system,sans-serif;color:#fff;-webkit-user-select:none;user-select:none}
 .rcap-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
-.rcap-frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-  height:64vh;width:calc(64vh * 0.62);max-width:88vw;
-  border:1px solid rgba(255,255,255,.35);border-radius:6px;pointer-events:none;transition:border-color .25s}
+/* Open-bottomed guide: top edge + full-height side rails (no bottom edge) so a
+   long receipt can extend past the bottom of the screen. Rails use the accent
+   color so they turn green when a receipt is detected. */
+.rcap-frame{position:absolute;top:11%;bottom:12%;left:50%;transform:translateX(-50%);
+  width:min(86vw,420px);
+  border:2px solid var(--rcap-accent);border-bottom:0;border-radius:8px 8px 0 0;
+  pointer-events:none;transition:border-color .25s}
 .rcap-corner{position:absolute;width:26px;height:26px;border:3px solid var(--rcap-accent);transition:border-color .25s}
 .rcap-corner.tl{top:-2px;left:-2px;border-right:0;border-bottom:0;border-radius:8px 0 0 0}
 .rcap-corner.tr{top:-2px;right:-2px;border-left:0;border-bottom:0;border-radius:0 8px 0 0}
-.rcap-corner.bl{bottom:-2px;left:-2px;border-right:0;border-top:0;border-radius:0 0 0 8px}
-.rcap-corner.br{bottom:-2px;right:-2px;border-left:0;border-top:0;border-radius:0 0 8px 0}
 .rcap-edge{position:absolute;background:var(--rcap-accent);color:#1a1a1a;font-size:11px;font-weight:700;
   padding:3px 9px;border-radius:999px;white-space:nowrap;transition:background-color .25s}
 .rcap-edge.top{top:-12px;left:50%;transform:translateX(-50%)}
@@ -247,10 +254,13 @@
 .rcap-detect{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;opacity:0;transition:opacity .15s}
 .rcap-detect polygon{fill:rgba(34,197,94,.12);stroke:var(--rcap-accent);stroke-width:3;
   stroke-linejoin:round;vector-effect:non-scaling-stroke}
-.rcap-still{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-  height:64vh;width:calc(64vh * 0.62);max-width:88vw;
-  object-fit:contain;border-radius:6px;background:#111}
-.rcap-checklist{position:absolute;left:50%;top:76%;transform:translateX(-50%);display:flex;gap:14px;
+.rcap-still{position:absolute;top:11%;left:50%;transform:translateX(-50%);
+  width:min(86vw,420px);height:77%;object-fit:contain;border-radius:6px;background:#111}
+.rcap-hint{position:absolute;left:50%;bottom:118px;transform:translateX(-50%);
+  background:rgba(0,0,0,.5);color:#fff;font-size:13px;font-weight:600;padding:7px 14px;border-radius:999px;
+  max-width:88vw;text-align:center;z-index:3}
+.rcap-root[data-mode="review"] .rcap-hint{display:none}
+.rcap-checklist{position:absolute;left:50%;top:80%;transform:translateX(-50%);display:flex;gap:14px;
   background:rgba(15,15,18,.82);padding:9px 14px;border-radius:12px;font-size:14px;font-weight:600;white-space:nowrap}
 .rcap-checklist b{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;
   background:var(--rcap-accent);color:#1a1a1a;font-size:11px;margin-right:5px;vertical-align:middle}
@@ -364,19 +374,25 @@
         } else { motion = 999; }
         this._prevLuma = luma;
 
-        const quad = (this._cvReady && this.opts.edgeDetection) ? this._detectQuad(cap) : null;
-        this._quad = quad;
-        this._updateDetectOverlay(quad);
-        this._evaluate(mean, glareFrac, motion, quad);
+        // Detection: prefer a full quad (short receipt fully in view); otherwise
+        // look for the two vertical side edges (long receipt running off-frame).
+        let quad = null, edges = null, detected = false;
+        if (this._cvReady && this.opts.edgeDetection) {
+          quad = this._detectQuad(cap);
+          if (quad && quad.areaFrac >= this.opts.minQuadArea) detected = true;
+          else { quad = null; edges = this._detectSideEdges(cap); if (edges) detected = true; }
+        }
+        this._quad = quad; this._edges = edges;
+        this._updateDetectOverlay(quad);   // snapping polygon only for a full quad
+        this._evaluate(mean, glareFrac, motion, detected);
       }, 220);
     }
 
-    _evaluate(mean, glareFrac, motion, quad) {
+    _evaluate(mean, glareFrac, motion, detected) {
       const o = this.opts;
       const useDet = this._cvReady && o.edgeDetection;
       let msg, ready = false;
-      if (useDet && (!quad || quad.areaFrac < o.minQuadArea)) msg = "Line up the receipt edges in the box";
-      else if (useDet && quad.areaFrac < 0.20) msg = "Move closer";
+      if (useDet && !detected) msg = "Line up the receipt edges in the box";
       else if (mean < o.lumaMin) msg = "Too dark — add light or tap ⚡";
       else if (mean > o.lumaMax) msg = "Too bright — reduce light";
       else if (glareFrac > o.glareMax) msg = "Glare detected — tilt the receipt";
@@ -503,6 +519,60 @@
       }
     }
 
+    /** Detect the receipt's left/right vertical edges via a column profile of
+     *  horizontal-gradient (Sobel-x) energy. Works for long receipts that run
+     *  off the top/bottom of the frame. Returns {leftX, rightX, w, h} or null. */
+    _detectSideEdges(canvas) {
+      if (!this._cvReady || !global.cv) return null;
+      const cv = global.cv;
+      let src, gray, gx, col;
+      try {
+        src = cv.imread(canvas); gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+        cv.GaussianBlur(gray, gray, new cv.Size(3, 3), 0);
+        gx = new cv.Mat(); cv.Sobel(gray, gx, cv.CV_32F, 1, 0, 3);
+        const absG = new cv.Mat(); cv.convertScaleAbs(gx, absG); gx.delete(); gx = absG;
+        col = new cv.Mat(); cv.reduce(gx, col, 0, cv.REDUCE_AVG, cv.CV_32F);  // 1 x w avg
+        const w = canvas.width, h = canvas.height;
+        const prof = new Float32Array(w);
+        let sum = 0;
+        for (let i = 0; i < w; i++) { prof[i] = col.data32F[i]; sum += prof[i]; }
+        const mean = sum / w || 1;
+        const m0 = Math.floor(w * 0.04), mid = Math.floor(w * 0.5), m3 = Math.ceil(w * 0.96);
+        let lX = -1, lV = 0; for (let i = m0; i < mid; i++) if (prof[i] > lV) { lV = prof[i]; lX = i; }
+        let rX = -1, rV = 0; for (let i = mid; i < m3; i++) if (prof[i] > rV) { rV = prof[i]; rX = i; }
+        if (lX < 0 || rX < 0) return null;
+        if (lV < mean * 1.6 || rV < mean * 1.6) return null;   // edges not pronounced enough
+        if (rX - lX < w * 0.22) return null;                   // detected band too narrow
+        return { leftX: lX, rightX: rX, w, h };
+      } catch (_) { return null; }
+      finally { [src, gray, gx, col].forEach((m) => { if (m && m.delete) { try { m.delete(); } catch (_) {} } }); }
+    }
+
+    /** Capture the vertical strip between the detected side edges, full frame
+     *  height (top of screen to bottom) — for long receipts. Returns true if a
+     *  segment was pushed, false otherwise. */
+    _captureStrip() {
+      const hi = this._coverCropCanvas(1600);
+      if (!hi) return false;
+      const e = this._detectSideEdges(hi);
+      if (!e) return false;
+      const pad = Math.round(hi.width * 0.01);
+      const x = Math.max(0, e.leftX - pad);
+      const w = Math.min(hi.width - x, (e.rightX - e.leftX) + pad * 2);
+      if (w < hi.width * 0.15) return false;
+      const out = document.createElement("canvas");
+      out.width = Math.round(w); out.height = hi.height;
+      out.getContext("2d").drawImage(hi, x, 0, w, hi.height, 0, 0, out.width, out.height);
+      const ctx = out.getContext("2d");
+      const luminance = this._screenAndGrayscale(ctx, out);
+      if (luminance < this.opts.lumaMin) throw new RangeError(`Too dark (${Math.round(luminance)})`);
+      if (luminance > this.opts.lumaMax) throw new RangeError(`Too bright (${Math.round(luminance)})`);
+      this.segments.push(out);
+      this._emit("segment", { count: this.segments.length, luminance, strip: true });
+      return true;
+    }
+
     /** Capture using perspective de-warp from the detected quad. Returns true if
      *  a segment was pushed, false if no usable quad (caller falls back). */
     _captureDeskewed() {
@@ -545,10 +615,13 @@
     _doCapture(auto) {
       if (this._busy || this._mode !== "live") return;
       try {
-        // Prefer perspective-corrected capture from the detected edges; fall
-        // back to the fixed-rect crop if no usable quad was found.
+        // 1) full-quad de-warp (short receipt), 2) vertical strip between the
+        // side edges (long receipt), 3) fixed-rect crop of the guide box.
         let ok = false;
-        if (this._cvReady && this.opts.edgeDetection) ok = this._captureDeskewed();
+        if (this._cvReady && this.opts.edgeDetection) {
+          ok = this._captureDeskewed();
+          if (!ok) ok = this._captureStrip();
+        }
         if (!ok) this.capture();   // throws RangeError on luminance fail
         this._flashAnim();
         this._enterReview();
