@@ -353,7 +353,12 @@ def handle_unexpected(exc):
 
 @app.route("/")
 def index():
-    return send_from_directory("static", "index.html")
+    # Root now serves the camera/edge-detection experience (the old "clip"
+    # prototype is still at /static/index.html if ever needed). no-store stops
+    # the browser painting a stale cached copy before revalidating.
+    resp = send_from_directory(APP_DIR, "design_preview_noclip.html")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.route("/api/config-status")
@@ -424,9 +429,10 @@ def match_receipt():
 # ---------------------------------------------------------- AWS Textract path --
 @app.route("/noclip")
 def noclip_preview():
-    """Serve the camera-capture design preview from localhost so getUserMedia
-    has a secure context and the /aws/* fetches hit this backend."""
-    return send_from_directory(APP_DIR, "design_preview_noclip.html")
+    """Alias for the camera-capture page (same as /)."""
+    resp = send_from_directory(APP_DIR, "design_preview_noclip.html")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.route("/aws/status")
