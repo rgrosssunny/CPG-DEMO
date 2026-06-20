@@ -321,11 +321,13 @@
   .store-banner .sb-logo{ width:56px;height:56px;flex:none;border-radius:var(--r-lg);display:grid;place-items:center;color:#fff;font-weight:800;font-size:18px }
   .store-banner .sb-name{ font-size:19px;font-weight:800 } .store-banner .sb-meta{ font-size:13px;color:var(--ink-400);margin-top:2px }
 .previewbg{font-family:Manrope,system-ui,sans-serif;background:radial-gradient(120% 80% at 50% 0%,#e9eef1 0%,#dfe4e7 60%,#d3d8db 100%);display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:0;}
-/* Responsive: full-bleed on phones, centered card on tablet/desktop. */
-.previewbg .device{width:100%;max-width:480px;min-height:100vh;margin:0;border-radius:0;max-height:none}
+/* Responsive: full-bleed on phones, centered card on tablet/desktop.
+   Fixed viewport height (dvh handles mobile browser chrome) so main scrolls
+   INSIDE the device and the "Scan receipt" FAB floats above the bottom. */
+.previewbg .device{width:100%;max-width:480px;height:100vh;height:100dvh;margin:0;border-radius:0;max-height:none}
 @media(min-width:600px){
   .previewbg{padding:24px 12px}
-  .previewbg .device{min-height:calc(100vh - 48px);border-radius:24px}
+  .previewbg .device{height:calc(100vh - 48px);height:calc(100dvh - 48px);border-radius:24px}
 }
 </style>
 
