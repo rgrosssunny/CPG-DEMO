@@ -320,8 +320,13 @@
   .store-banner{ display:flex;align-items:center;gap:14px;margin:4px 2px 8px }
   .store-banner .sb-logo{ width:56px;height:56px;flex:none;border-radius:var(--r-lg);display:grid;place-items:center;color:#fff;font-weight:800;font-size:18px }
   .store-banner .sb-name{ font-size:19px;font-weight:800 } .store-banner .sb-meta{ font-size:13px;color:var(--ink-400);margin-top:2px }
-.previewbg{font-family:Manrope,system-ui,sans-serif;background:radial-gradient(120% 80% at 50% 0%,#e9eef1 0%,#dfe4e7 60%,#d3d8db 100%);display:flex;justify-content:center;align-items:flex-start;min-height:640px;padding:0;}
-.previewbg .device{margin:0 !important;border-radius:0 !important;min-height:680px;max-height:680px}
+.previewbg{font-family:Manrope,system-ui,sans-serif;background:radial-gradient(120% 80% at 50% 0%,#e9eef1 0%,#dfe4e7 60%,#d3d8db 100%);display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:0;}
+/* Responsive: full-bleed on phones, centered card on tablet/desktop. */
+.previewbg .device{width:100%;max-width:480px;min-height:100vh;margin:0;border-radius:0;max-height:none}
+@media(min-width:600px){
+  .previewbg{padding:24px 12px}
+  .previewbg .device{min-height:calc(100vh - 48px);border-radius:24px}
+}
 </style>
 
 <script>
@@ -569,7 +574,7 @@
       <div class="preview" id="preview"></div>
       <button id="submitReceipt" class="btn btn-primary btn-block" style="margin-top:16px" disabled>Submit receipt</button>
 
-      <div style="display:flex;align-items:center;gap:10px;margin:16px 2px 12px;color:var(--ink-400);font-size:12px">
+      <div id="camOrDivider" style="display:flex;align-items:center;gap:10px;margin:16px 2px 12px;color:var(--ink-400);font-size:12px">
         <span style="flex:1;height:1px;background:var(--line-soft)"></span>OR<span style="flex:1;height:1px;background:var(--line-soft)"></span>
       </div>
       <div id="awsWarn" class="banner warn hidden"></div>
@@ -854,7 +859,7 @@ let chosenFile=null;
 
 $("openReceipt").addEventListener("click",openReceipt);
 $("closeReceipt").addEventListener("click",closeReceipt);
-function openReceipt(){ resetReceipt(); checkAwsStatus(); receiptScrim.classList.add("open"); }
+function openReceipt(){ resetReceipt(); applyCaptureMode(); checkAwsStatus(); receiptScrim.classList.add("open"); }
 function closeReceipt(){ stopCamera(); receiptScrim.classList.remove("open"); }
 receiptScrim.addEventListener("click",e=>{ if(e.target===receiptScrim) closeReceipt(); });
 
@@ -935,6 +940,21 @@ submitBtn.addEventListener("click",async()=>{
    the upload + analyze pipeline. We just launch it and show the result. */
 let captureSDK = null;
 const API_BASE = (window.BACKEND_URL || "").replace(/\/$/, "");
+
+/* Camera capture is offered only on touch devices (phones/tablets). Desktops
+   get upload only. Primary-pointer "coarse" catches phones/tablets (incl. iPad,
+   whose UA now reads as desktop) while excluding mouse-driven touch laptops. */
+const IS_TOUCH_DEVICE = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches)
+  || /Android|iPhone|iPad|iPod|Mobile|Tablet|Silk|Kindle/i.test(navigator.userAgent);
+const CAN_CAMERA = IS_TOUCH_DEVICE && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+
+function applyCaptureMode(){
+  const cam = $("useCamera"), divider = $("camOrDivider");
+  if(cam) cam.classList.toggle("hidden", !CAN_CAMERA);
+  if(divider) divider.classList.toggle("hidden", !CAN_CAMERA);
+  const dropStrong = document.querySelector("#drop strong");
+  if(dropStrong) dropStrong.textContent = CAN_CAMERA ? "Tap to take a photo" : "Click to upload a receipt";
+}
 
 async function checkAwsStatus(){
   const w = $("awsWarn");
