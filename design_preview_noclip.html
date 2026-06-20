@@ -568,11 +568,11 @@
     <div id="rcStep1">
       <div id="configWarn" class="banner warn hidden">Veryfi credentials aren't set yet. Add them to <code>.env</code> and restart the server to use live OCR.</div>
       <div class="drop" id="drop">
-        <div class="big">📷</div>
-        <strong>Tap to take a photo</strong><br>
-        <span class="small">or choose a file · JPG, PNG, PDF, HEIC · up to 20 MB</span>
+        <div class="big">📤</div>
+        <strong>Upload a receipt</strong><br>
+        <span class="small">Choose an image · JPG, PNG or HEIC · up to 20 MB</span>
       </div>
-      <input id="file" type="file" accept="image/*,application/pdf" capture="environment" class="hidden" />
+      <input id="file" type="file" accept="image/*" class="hidden" />
       <div class="preview" id="preview"></div>
       <button id="submitReceipt" class="btn btn-primary btn-block" style="margin-top:16px" disabled>Submit receipt</button>
 
@@ -580,7 +580,7 @@
         <span style="flex:1;height:1px;background:var(--line-soft)"></span>OR<span style="flex:1;height:1px;background:var(--line-soft)"></span>
       </div>
       <div id="awsWarn" class="banner warn hidden"></div>
-      <button id="useCamera" class="btn btn-brand btn-block">📸 Capture with camera (AWS Textract)</button>
+      <button id="useCamera" class="btn btn-brand btn-block">📸 Capture receipt with camera</button>
       <button id="closeReceipt" class="btn btn-ghost btn-block" style="margin-top:10px">Cancel</button>
     </div>
 
@@ -920,20 +920,41 @@ function matchReceipt(veryfi){
   return {redeemed, suggested, fuzzyOnly};
 }
 
+/* Send an uploaded receipt image through the SAME AWS Textract pipeline the
+   camera uses (get-upload-url -> PUT -> poll), so upload works on the live site. */
+async function uploadToAws(blob, onStatus){
+  const meta = await fetch(API_BASE + "/aws/get-upload-url", {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({content_type:blob.type||"image/jpeg"})
+  }).then(r=>r.json());
+  const put = await fetch(meta.upload_url, {
+    method:"PUT", headers:{"Content-Type":blob.type||"image/jpeg","X-User-Id":"member-demo"}, body:blob
+  });
+  if(!put.ok) throw new Error("Upload failed (HTTP "+put.status+").");
+  for(let i=1;i<=60;i++){
+    await new Promise(r=>setTimeout(r,2000));
+    const s = await fetch(API_BASE + "/aws/analyze-status?job="+encodeURIComponent(meta.job_id)).then(r=>r.json());
+    if(onStatus) onStatus(s,i);
+    if(s.status==="done") return s.result;
+    if(s.status==="rejected"){ const e=new Error(s.error||"Receipt rejected."); e.rejected=true; e.result=s.result; throw e; }
+    if(s.status==="failed") throw new Error(s.error||"Processing failed.");
+    if(s.status==="unknown") throw new Error("Job not found on server.");
+  }
+  throw new Error("Timed out waiting for OCR result.");
+}
+
 submitBtn.addEventListener("click",async()=>{
   if(!chosenFile) return;
   submitBtn.disabled=true;
-  submitBtn.innerHTML=`<span class="spinner"></span>Reading receipt…`;
-  const fd=new FormData(); fd.append("receipt",chosenFile);
-  let data;
+  submitBtn.innerHTML=`<span class="spinner"></span>Uploading…`;
   try{
-    const resp=await fetch("/api/process",{method:"POST",body:fd});
-    const text=await resp.text();
-    try{ data=JSON.parse(text); }catch{ showReceiptError("Veryfi returned an unexpected response (HTTP "+resp.status+")."); return; }
-    if(!resp.ok){ showReceiptError(data.error||"Veryfi could not process this receipt.", data.details||data.body); return; }
-  }catch(err){ showReceiptError("Couldn't reach the server. Is it running on localhost:5050?"); return; }
-  finally{ submitBtn.innerHTML="Submit receipt"; submitBtn.disabled=false; }
-  showReceiptResult(data);
+    const result = await uploadToAws(chosenFile, (s)=>{
+      submitBtn.innerHTML=`<span class="spinner"></span>${s.status==="processing"?"Analyzing…":"Uploading…"}`;
+    });
+    showReceiptResult(result);
+  }catch(err){
+    if(err && err.rejected) showReceiptError("Receipt rejected — "+err.message, err.result);
+    else showReceiptError(err && err.message ? err.message : "Couldn't process the receipt.");
+  }finally{ submitBtn.innerHTML="Submit receipt"; submitBtn.disabled=false; }
 });
 
 /* =================== CAMERA CAPTURE (AWS Textract SDK) =================== */
@@ -954,8 +975,9 @@ function applyCaptureMode(){
   const cam = $("useCamera"), divider = $("camOrDivider");
   if(cam) cam.classList.toggle("hidden", !CAN_CAMERA);
   if(divider) divider.classList.toggle("hidden", !CAN_CAMERA);
+  // Top section is upload-only on every device; camera lives in its own button.
   const dropStrong = document.querySelector("#drop strong");
-  if(dropStrong) dropStrong.textContent = CAN_CAMERA ? "Tap to take a photo" : "Click to upload a receipt";
+  if(dropStrong) dropStrong.textContent = "Upload a receipt";
 }
 
 async function checkAwsStatus(){
