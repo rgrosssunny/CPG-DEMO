@@ -577,19 +577,6 @@
       <button id="closeReceipt" class="btn btn-ghost btn-block" style="margin-top:10px">Cancel</button>
     </div>
 
-    <!-- Camera capture panel (driven by ReceiptCaptureSDK) -->
-    <div id="rcCamera" class="hidden">
-      <div id="camMount" style="position:relative;width:100%;aspect-ratio:3/4;max-height:62vh;border-radius:var(--r-md);overflow:hidden;background:#000"></div>
-      <div id="camStatus" class="small muted" style="text-align:center;margin:10px 2px;min-height:18px">Align the receipt inside the green box.</div>
-      <div style="display:flex;gap:8px">
-        <button id="camCapture" class="btn btn-primary" style="flex:2;justify-content:center">Capture page</button>
-        <button id="camUndo" class="btn btn-ghost hidden" style="flex:1;justify-content:center">Undo</button>
-      </div>
-      <div id="camThumbs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px"></div>
-      <button id="camSubmit" class="btn btn-brand btn-block hidden" style="margin-top:12px">Submit &amp; analyze</button>
-      <button id="camCancel" class="btn btn-ghost btn-block" style="margin-top:10px">Cancel</button>
-    </div>
-
     <div id="rcResult" class="hidden"></div>
   </div>
 </div>
@@ -876,7 +863,7 @@ function resetReceipt(){
   submitBtn.disabled=true; $("rcStep1").classList.remove("hidden");
   $("rcResult").classList.add("hidden"); $("rcResult").innerHTML="";
   submitBtn.textContent="Submit receipt";
-  stopCamera(); $("rcCamera").classList.add("hidden");
+  stopCamera();
 }
 drop.addEventListener("click",()=>fileInput.click());
 ["dragover","dragenter"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add("drag");}));
@@ -943,8 +930,10 @@ submitBtn.addEventListener("click",async()=>{
 });
 
 /* =================== CAMERA CAPTURE (AWS Textract SDK) =================== */
+/* The SDK now renders its own full-screen guided capture UI (top bar, framing
+   brackets, live coaching, auto-capture, flash, multi-page thumbnails) and runs
+   the upload + analyze pipeline. We just launch it and show the result. */
 let captureSDK = null;
-
 const API_BASE = (window.BACKEND_URL || "").replace(/\/$/, "");
 
 async function checkAwsStatus(){
@@ -958,70 +947,24 @@ async function checkAwsStatus(){
   }catch(e){ w.classList.add("hidden"); }  // not served by Flask yet — stay quiet
 }
 
-function renderCamThumbs(){
-  const wrap = $("camThumbs"); wrap.innerHTML="";
-  (captureSDK?.segments||[]).forEach(c=>{
-    const t = document.createElement("canvas");
-    t.width = 48; t.height = Math.max(16, Math.round(48 * (c.height/c.width)));
-    t.style.cssText = "border-radius:6px;border:1px solid var(--line-soft)";
-    t.getContext("2d").drawImage(c,0,0,t.width,t.height);
-    wrap.appendChild(t);
-  });
-  const n = captureSDK?.segmentCount || 0;
-  $("camUndo").classList.toggle("hidden", n===0);
-  $("camSubmit").classList.toggle("hidden", n===0);
-  $("camSubmit").textContent = n>1 ? `Submit ${n} pages & analyze` : "Submit & analyze";
-}
+function stopCamera(){ if(captureSDK){ try{ captureSDK.close(); }catch(e){} captureSDK=null; } }
 
-function stopCamera(){
-  if(captureSDK){ try{ captureSDK.stop(); }catch(e){} captureSDK.clearSegments(); captureSDK=null; }
-  const m=$("camMount"); if(m) m.innerHTML="";
-}
-
-async function startCamera(){
+$("useCamera").addEventListener("click", async ()=>{
   if(typeof ReceiptCaptureSDK==="undefined"){ toast("Capture SDK failed to load."); return; }
-  $("rcStep1").classList.add("hidden"); $("rcCamera").classList.remove("hidden");
-  $("camThumbs").innerHTML=""; $("camUndo").classList.add("hidden"); $("camSubmit").classList.add("hidden");
   captureSDK = new ReceiptCaptureSDK({
     userId: "member-demo",
+    autoCapture: true,
     endpoints: { uploadUrl: API_BASE + "/aws/get-upload-url", status: API_BASE + "/aws/analyze-status" },
   });
-  captureSDK.on("status", s=>{
-    $("camStatus").textContent = s.message ||
-      (s.phase==="polling" ? `Analyzing on AWS… (check ${s.attempt})` : s.phase);
-  });
   try{
-    await captureSDK.mount($("camMount"));
-    await captureSDK.start();
-    $("camStatus").textContent = "Align the receipt in the green box, then capture.";
+    const result = await captureSDK.captureFlow();   // full-screen capture + upload + analyze
+    captureSDK = null;
+    showReceiptResult(result);                        // render in the receipt sheet
   }catch(err){
-    stopCamera(); $("rcCamera").classList.add("hidden"); $("rcStep1").classList.remove("hidden");
-    const w=$("awsWarn"); w.textContent="Camera unavailable: "+err.message; w.classList.remove("hidden");
+    captureSDK = null;
+    if(err && err.cancelled) return;                  // user closed the camera — stay on step 1
+    showReceiptError(err && err.message ? err.message : "Capture failed.");
   }
-}
-
-$("useCamera").addEventListener("click", startCamera);
-$("camCancel").addEventListener("click", ()=>{ stopCamera(); $("rcCamera").classList.add("hidden"); $("rcStep1").classList.remove("hidden"); });
-$("camCapture").addEventListener("click", ()=>{
-  try{
-    const r = captureSDK.capture();
-    renderCamThumbs();
-    $("camStatus").textContent = `Page ${r.count} captured (luminance ${Math.round(r.luminance)}${r.rotated?", rotated":""}). Capture another or submit.`;
-  }catch(err){ $("camStatus").textContent = err.message; toast(err.message); }
-});
-$("camUndo").addEventListener("click", ()=>{ captureSDK.removeLastSegment(); renderCamThumbs(); $("camStatus").textContent="Removed last page."; });
-$("camSubmit").addEventListener("click", async ()=>{
-  const btn=$("camSubmit"); btn.disabled=true; const orig=btn.textContent;
-  btn.innerHTML=`<span class="spinner"></span>Uploading…`;
-  try{
-    const result = await captureSDK.submit();
-    stopCamera(); $("rcCamera").classList.add("hidden");
-    showReceiptResult(result);
-  }catch(err){
-    stopCamera(); $("rcCamera").classList.add("hidden");
-    if(err.rejected) showReceiptError("Receipt rejected — "+err.message, err.result);
-    else showReceiptError(err.message||"Capture failed.");
-  }finally{ btn.disabled=false; btn.textContent=orig; }
 });
 
 function showReceiptError(msg, detail){
