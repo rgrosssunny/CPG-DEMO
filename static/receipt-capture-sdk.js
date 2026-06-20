@@ -140,6 +140,17 @@
       detect.appendChild(detectPoly);
       root.appendChild(detect);
 
+      // LIVE (continuation): sliver of the previous section pinned to the top so
+      // the user can line up the next section, + a bottom line that only appears
+      // when the receipt's actual bottom edge is detected in view.
+      const overlap = document.createElement("canvas");
+      overlap.className = "rcap-overlap"; overlap.style.display = "none";
+      root.appendChild(overlap);
+      const bottomline = document.createElement("div");
+      bottomline.className = "rcap-bottomline"; bottomline.style.display = "none";
+      bottomline.innerHTML = '<span class="rcap-edge bottom">Receipt edge</span>';
+      root.appendChild(bottomline);
+
       // REVIEW: frozen still + field checklist (occupies the same framed area)
       const still = document.createElement("img");
       still.className = "rcap-still"; still.alt = "Captured section";
@@ -205,7 +216,7 @@
 
       document.body.appendChild(root);
       this._ui = {
-        root, frame, detect, detectPoly, still, checklist, coach, help, proc,
+        root, frame, detect, detectPoly, overlap, bottomline, still, checklist, coach, help, proc,
         dot: top.querySelector(".rcap-dot"),
         count: top.querySelector(".rcap-count"),
         flash: top.querySelector(".rcap-flash"),
@@ -251,6 +262,19 @@
 .rcap-edge.top{top:-12px;left:50%;transform:translateX(-50%)}
 .rcap-edge.left{left:-11px;top:50%;transform:translateY(-50%) rotate(180deg);writing-mode:vertical-rl}
 .rcap-edge.right{right:-11px;top:50%;transform:translateY(-50%);writing-mode:vertical-rl}
+.rcap-overlap{position:absolute;top:11%;left:50%;transform:translateX(-50%);
+  width:min(86vw,420px);height:62px;object-fit:cover;object-position:bottom;z-index:3;
+  border-bottom:2px dashed #22c55e;opacity:.9}
+.rcap-overlap::after{content:''}
+.rcap-bottomline{position:absolute;left:50%;transform:translateX(-50%);width:min(86vw,420px);
+  height:0;border-top:3px solid var(--rcap-accent);z-index:3;transition:top .1s}
+.rcap-bottomline .rcap-edge.bottom{position:absolute;left:50%;top:4px;transform:translateX(-50%)}
+.rcap-root[data-mode="review"] .rcap-overlap,
+.rcap-root[data-mode="review"] .rcap-bottomline{display:none !important}
+/* During a continuation section, the overlap sliver is the top reference, so
+   hide the receipt's top edge label + top corner brackets. */
+.rcap-root[data-cont="1"] .rcap-edge.top,
+.rcap-root[data-cont="1"] .rcap-corner{display:none}
 .rcap-detect{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;opacity:0;transition:opacity .15s}
 .rcap-detect polygon{fill:rgba(34,197,94,.12);stroke:var(--rcap-accent);stroke-width:3;
   stroke-linejoin:round;vector-effect:non-scaling-stroke}
@@ -325,7 +349,38 @@
         this._cooldownUntil = Date.now() + 1800;
         this._setCoach("Point at your receipt", false);
       }
+      this._showOverlap();
       this._updateCounter();
+    }
+
+    /** Pin a sliver of the previous section's bottom to the top of the live view
+     *  so the user can line the next section up with it (for clean stitching). */
+    _showOverlap() {
+      if (!this._ui) return;
+      const ov = this._ui.overlap;
+      if (this._mode === "live" && this.segments.length > 0) {
+        const last = this.segments[this.segments.length - 1];
+        const sliceH = Math.max(1, Math.round(last.height * 0.18));
+        ov.width = last.width; ov.height = sliceH;
+        ov.getContext("2d").drawImage(last, 0, last.height - sliceH, last.width, sliceH,
+          0, 0, last.width, sliceH);
+        ov.style.display = "block";
+        this._ui.root.dataset.cont = "1";   // continuation: top is the overlap seam
+      } else {
+        ov.style.display = "none";
+        this._ui.root.dataset.cont = "";
+      }
+    }
+
+    _updateBottomLine(edges, cap) {
+      const bl = this._ui && this._ui.bottomline;
+      if (!bl) return;
+      if (edges && edges.bottomY != null && cap) {
+        bl.style.top = ((edges.bottomY / cap.height) * 100) + "%";
+        bl.style.display = "block";
+      } else {
+        bl.style.display = "none";
+      }
     }
     _setAccent(ready) {
       if (!this._ui) return;
@@ -384,6 +439,7 @@
         }
         this._quad = quad; this._edges = edges;
         this._updateDetectOverlay(quad);   // snapping polygon only for a full quad
+        this._updateBottomLine(edges, cap); // bottom line only when the end is in view
         this._evaluate(mean, glareFrac, motion, detected);
       }, 220);
     }
@@ -397,7 +453,11 @@
       else if (mean > o.lumaMax) msg = "Too bright — reduce light";
       else if (glareFrac > o.glareMax) msg = "Glare detected — tilt the receipt";
       else if (motion > o.motionMax) msg = "Hold steady…";
-      else { msg = useDet ? "Receipt detected — hold still" : "Looks good — hold still"; ready = true; }
+      else {
+        ready = true;
+        msg = (useDet && this._edges && this._edges.bottomY != null) ? "Bottom of receipt in view — hold still"
+            : (useDet ? "Receipt detected — hold still" : "Looks good — hold still");
+      }
       this._setCoach(msg, ready);
       if (ready) this._goodStreak++; else this._goodStreak = 0;
       if (o.autoCapture && ready && this._goodStreak >= o.autoCaptureFrames && Date.now() > this._cooldownUntil) {
@@ -544,7 +604,32 @@
         if (lX < 0 || rX < 0) return null;
         if (lV < mean * 1.6 || rV < mean * 1.6) return null;   // edges not pronounced enough
         if (rX - lX < w * 0.22) return null;                   // detected band too narrow
-        return { leftX: lX, rightX: rX, w, h };
+
+        // Bottom edge: within the receipt's column band, find the row where
+        // brightness drops from receipt (light) to background (dark). null if
+        // the receipt runs off the bottom of the frame (no end in view).
+        let bottomY = null;
+        try {
+          const bx = Math.max(0, lX), bw = Math.min(w - bx, rX - lX);
+          if (bw > 4) {
+            const roi = gray.roi(new cv.Rect(bx, 0, bw, h));
+            const rowMean = new cv.Mat();
+            cv.reduce(roi, rowMean, 1, cv.REDUCE_AVG, cv.CV_32F);   // h x 1 (avg per row)
+            roi.delete();
+            const topN = Math.max(1, Math.floor(h * 0.30));
+            let s = 0; for (let y = 0; y < topN; y++) s += rowMean.data32F[y];
+            const receiptMean = s / topN, thr = receiptMean * 0.6;
+            for (let y = Math.floor(h * 0.35); y < h - 2; y++) {
+              if (rowMean.data32F[y] < thr && rowMean.data32F[y + 1] < thr && rowMean.data32F[y + 2] < thr) {
+                bottomY = y; break;
+              }
+            }
+            rowMean.delete();
+            if (bottomY != null && bottomY > h * 0.97) bottomY = null;  // basically off-frame
+          }
+        } catch (_) { bottomY = null; }
+
+        return { leftX: lX, rightX: rX, bottomY, w, h };
       } catch (_) { return null; }
       finally { [src, gray, gx, col].forEach((m) => { if (m && m.delete) { try { m.delete(); } catch (_) {} } }); }
     }
@@ -561,9 +646,11 @@
       const x = Math.max(0, e.leftX - pad);
       const w = Math.min(hi.width - x, (e.rightX - e.leftX) + pad * 2);
       if (w < hi.width * 0.15) return false;
+      // Crop down to the detected bottom edge (last section), else full height.
+      const cropH = (e.bottomY != null) ? Math.min(hi.height, e.bottomY + pad * 2) : hi.height;
       const out = document.createElement("canvas");
-      out.width = Math.round(w); out.height = hi.height;
-      out.getContext("2d").drawImage(hi, x, 0, w, hi.height, 0, 0, out.width, out.height);
+      out.width = Math.round(w); out.height = cropH;
+      out.getContext("2d").drawImage(hi, x, 0, w, cropH, 0, 0, out.width, cropH);
       const ctx = out.getContext("2d");
       const luminance = this._screenAndGrayscale(ctx, out);
       if (luminance < this.opts.lumaMin) throw new RangeError(`Too dark (${Math.round(luminance)})`);
