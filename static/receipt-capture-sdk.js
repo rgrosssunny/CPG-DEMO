@@ -12,18 +12,19 @@
  *   - Multi-image vertical stitching
  *   - Presigned-PUT + 2s polling transmission pipeline
  *
- * Guided UI (full-screen, Ibotta-style):
- *   - Edge-to-edge live preview with a corner-bracket framing guide
- *   - Top bar: close, "Photo N" counter, help, flash/torch toggle
- *   - Real-time coaching from a live analysis loop: lighting, glare, steadiness
- *   - "Ready" indicator + optional auto-capture when conditions are good
- *   - Thumbnail strip for multi-page long receipts
+ * Guided UI (full-screen, Ibotta-style), two modes:
+ *   LIVE  — edge-to-edge preview, corner-bracket frame, real-time coaching
+ *           (lighting / glare / steadiness), ready indicator, optional
+ *           auto-capture, flash/torch toggle.
+ *   REVIEW — after each shot: frozen still + "Store / Date/Time / Total" field
+ *           checklist, with Retake · Use receipt photo · Long receipt? Add
+ *           section. "Add section" loops back to LIVE for the next part of a
+ *           long receipt; "Use receipt photo" stitches + uploads + analyzes.
  *
  * High-level usage:
  *   const sdk = new ReceiptCaptureSDK({ userId, endpoints, autoCapture:true });
- *   const result = await sdk.captureFlow();   // opens UI, returns OCR result
- *   // rejects with {cancelled:true} if the user closes it,
- *   // or an Error (err.rejected / err.result) on a server rejection.
+ *   const result = await sdk.captureFlow();
+ *   // rejects {cancelled:true} if the user closes it, or an Error on failure.
  */
 (function (global) {
   "use strict";
@@ -37,21 +38,18 @@
     grayscale: true,
     lumaMin: 40,
     lumaMax: 230,
-    glareMax: 0.12,        // fraction of near-white pixels before "reduce glare"
-    motionMax: 8,          // mean abs luma delta between frames before "hold steady"
+    glareMax: 0.12,
+    motionMax: 8,
     autoCapture: true,
-    autoCaptureFrames: 4,  // consecutive "ready" frames before auto-shoot (~0.9s)
+    autoCaptureFrames: 4,
     pollIntervalMs: 2000,
     maxPolls: 60,
     userId: "demo-user",
-    endpoints: {
-      uploadUrl: "/aws/get-upload-url",
-      status: "/aws/analyze-status",
-    },
+    endpoints: { uploadUrl: "/aws/get-upload-url", status: "/aws/analyze-status" },
   };
 
-  const ACCENT_SEARCH = "#F5B301";  // amber while searching
-  const ACCENT_READY = "#22c55e";   // green when ready
+  const ACCENT_SEARCH = "#F5B301";
+  const ACCENT_READY = "#22c55e";
 
   class ReceiptCaptureSDK {
     constructor(opts = {}) {
@@ -61,7 +59,6 @@
       this.stream = null;
       this.video = null;
       this.reticle = null;
-      this.container = null;
       this.segments = [];
       this._listeners = {};
       this._ui = null;
@@ -71,21 +68,14 @@
       this._cooldownUntil = 0;
       this._busy = false;
       this._torchOn = false;
+      this._mode = "live";
     }
 
     /* ----------------------------------------------------------- events --- */
-    on(event, cb) {
-      (this._listeners[event] = this._listeners[event] || []).push(cb);
-      return this;
-    }
-    _emit(event, payload) {
-      (this._listeners[event] || []).forEach((cb) => {
-        try { cb(payload); } catch (_) {}
-      });
-    }
+    on(event, cb) { (this._listeners[event] = this._listeners[event] || []).push(cb); return this; }
+    _emit(event, payload) { (this._listeners[event] || []).forEach((cb) => { try { cb(payload); } catch (_) {} }); }
 
     /* ============================ HIGH-LEVEL FLOW ====================== */
-    /** Open the full-screen guided UI; resolve with the OCR result. */
     captureFlow() {
       return new Promise(async (resolve, reject) => {
         this._resolveFlow = resolve;
@@ -94,6 +84,7 @@
           this._buildUI();
           await this.start();
           this._startAnalysisLoop();
+          this._setMode("live");
           this._setCoach("Point at your receipt", false);
         } catch (err) {
           this._teardownUI();
@@ -107,18 +98,17 @@
       this._injectStyles();
       const root = document.createElement("div");
       root.className = "rcap-root";
+      root.dataset.mode = "live";
       root.style.setProperty("--rcap-accent", ACCENT_SEARCH);
 
       const video = document.createElement("video");
       video.className = "rcap-video";
-      video.setAttribute("playsinline", "");
-      video.setAttribute("autoplay", "");
-      video.setAttribute("muted", "");
+      video.setAttribute("playsinline", ""); video.setAttribute("autoplay", ""); video.setAttribute("muted", "");
       video.playsInline = true; video.autoplay = true; video.muted = true;
       this.video = video;
       root.appendChild(video);
 
-      // Framing guide: faint full border + bold corner brackets + edge labels.
+      // LIVE: framing guide
       const frame = document.createElement("div");
       frame.className = "rcap-frame";
       frame.innerHTML =
@@ -127,8 +117,18 @@
         '<span class="rcap-edge top">Receipt edge</span>' +
         '<span class="rcap-edge left">Receipt edge</span>' +
         '<span class="rcap-edge right">Receipt edge</span>';
-      this.reticle = frame;   // capture() crops to this element's rect
+      this.reticle = frame;
       root.appendChild(frame);
+
+      // REVIEW: frozen still + field checklist (occupies the same framed area)
+      const still = document.createElement("img");
+      still.className = "rcap-still"; still.alt = "Captured section";
+      root.appendChild(still);
+      const checklist = document.createElement("div");
+      checklist.className = "rcap-checklist";
+      checklist.innerHTML =
+        '<span><b>?</b> Store</span><span><b>?</b> Date/Time</span><span><b>?</b> Total</span>';
+      root.appendChild(checklist);
 
       // Top bar
       const top = document.createElement("div");
@@ -139,69 +139,63 @@
         '<div class="rcap-actions">' +
           '<button class="rcap-btn rcap-help" aria-label="Help">ⓘ</button>' +
           '<button class="rcap-btn rcap-flash" aria-label="Flash" hidden>⚡</button>' +
+          '<button class="rcap-retake">Retake</button>' +
         '</div>';
       root.appendChild(top);
 
-      // Coaching toast
+      // Coaching toast (LIVE)
       const coach = document.createElement("div");
       coach.className = "rcap-coach";
       root.appendChild(coach);
 
-      // Help panel (hidden)
+      // Help panel
       const help = document.createElement("div");
-      help.className = "rcap-help-panel";
-      help.hidden = true;
+      help.className = "rcap-help-panel"; help.hidden = true;
       help.innerHTML =
         '<div class="rcap-help-card"><h3>Capturing your receipt</h3>' +
         '<ul><li>Fill the frame — get the whole receipt inside the brackets.</li>' +
-        '<li>Flatten it on a dark, non-shiny surface.</li>' +
-        '<li>Avoid glare and shadows; tap ⚡ for the flash.</li>' +
-        '<li>Long receipt? Capture it in sections — tap the shutter for each, top to bottom.</li></ul>' +
+        '<li>Make sure the <b>store name, date, and total</b> are readable.</li>' +
+        '<li>Flatten it on a dark, non-shiny surface; avoid glare.</li>' +
+        '<li>Long receipt? Use <b>Add section</b> to capture it top to bottom.</li></ul>' +
         '<button class="rcap-btn-solid rcap-help-close">Got it</button></div>';
       root.appendChild(help);
 
-      // Bottom: thumbnails + shutter + done
+      // Bottom: LIVE shutter row + REVIEW actions
       const bottom = document.createElement("div");
       bottom.className = "rcap-bottom";
       bottom.innerHTML =
-        '<div class="rcap-thumbs"></div>' +
-        '<div class="rcap-shutter-row">' +
-          '<button class="rcap-undo" hidden>Undo</button>' +
-          '<button class="rcap-shutter" aria-label="Capture"></button>' +
-          '<button class="rcap-done" hidden>Use 1 →</button>' +
+        '<div class="rcap-shutter-row"><button class="rcap-shutter" aria-label="Capture"></button></div>' +
+        '<div class="rcap-review-actions">' +
+          '<button class="rcap-use">↑ Use receipt photo</button>' +
+          '<button class="rcap-add">Long receipt? Add section</button>' +
         '</div>';
       root.appendChild(bottom);
 
-      // Processing overlay (during upload/analyze)
+      // Processing overlay
       const proc = document.createElement("div");
-      proc.className = "rcap-proc";
-      proc.hidden = true;
+      proc.className = "rcap-proc"; proc.hidden = true;
       proc.innerHTML = '<div class="rcap-spin"></div><div class="rcap-proc-msg">Uploading…</div>';
       root.appendChild(proc);
 
       document.body.appendChild(root);
       this._ui = {
-        root, frame, coach, help, proc,
+        root, frame, still, checklist, coach, help, proc,
         dot: top.querySelector(".rcap-dot"),
         count: top.querySelector(".rcap-count"),
         flash: top.querySelector(".rcap-flash"),
-        thumbs: bottom.querySelector(".rcap-thumbs"),
         shutter: bottom.querySelector(".rcap-shutter"),
-        undo: bottom.querySelector(".rcap-undo"),
-        done: bottom.querySelector(".rcap-done"),
         procMsg: proc.querySelector(".rcap-proc-msg"),
       };
 
-      // Wire controls
       top.querySelector(".rcap-close").onclick = () => this._cancel();
       top.querySelector(".rcap-help").onclick = () => { help.hidden = false; };
+      top.querySelector(".rcap-retake").onclick = () => this._retake();
       help.querySelector(".rcap-help-close").onclick = () => { help.hidden = true; };
       this._ui.flash.onclick = () => this._toggleTorch();
       this._ui.shutter.onclick = () => this._manualCapture();
-      this._ui.undo.onclick = () => this._undo();
-      this._ui.done.onclick = () => this._finish();
+      bottom.querySelector(".rcap-use").onclick = () => this._useReceipt();
+      bottom.querySelector(".rcap-add").onclick = () => this._addSection();
 
-      // Surface upload/analyze progress in the processing overlay.
       this.on("status", (s) => {
         if (this._ui && !this._ui.proc.hidden) {
           this._ui.procMsg.textContent = s.message ||
@@ -228,54 +222,74 @@
 .rcap-edge.top{top:-12px;left:50%;transform:translateX(-50%)}
 .rcap-edge.left{left:-11px;top:50%;transform:translateY(-50%) rotate(180deg);writing-mode:vertical-rl}
 .rcap-edge.right{right:-11px;top:50%;transform:translateY(-50%);writing-mode:vertical-rl}
+.rcap-still{position:absolute;left:6%;top:15%;width:88%;height:61%;
+  object-fit:cover;border-radius:6px;background:#111}
+.rcap-checklist{position:absolute;left:50%;bottom:25%;transform:translateX(-50%);display:flex;gap:14px;
+  background:rgba(15,15,18,.82);padding:9px 14px;border-radius:12px;font-size:14px;font-weight:600;white-space:nowrap}
+.rcap-checklist b{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;
+  background:var(--rcap-accent);color:#1a1a1a;font-size:11px;margin-right:5px;vertical-align:middle}
 .rcap-top{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;
-  padding:max(14px,env(safe-area-inset-top,14px)) 14px 14px;background:linear-gradient(#000a,#0000)}
-.rcap-actions{display:flex;gap:6px}
+  padding:max(14px,env(safe-area-inset-top,14px)) 14px 14px;background:linear-gradient(#000a,#0000);z-index:4}
+.rcap-actions{display:flex;gap:6px;align-items:center}
 .rcap-btn{width:42px;height:42px;border:0;background:rgba(0,0,0,.35);color:#fff;border-radius:999px;
   font-size:18px;cursor:pointer;display:grid;place-items:center}
 .rcap-btn[hidden]{display:none}
 .rcap-flash.on{background:#F5B301;color:#1a1a1a}
+.rcap-retake{border:0;background:transparent;color:#fff;font-family:inherit;font-size:16px;font-weight:700;cursor:pointer;padding:8px}
 .rcap-title{display:flex;align-items:center;gap:8px;font-weight:800;font-size:17px}
-.rcap-dot{width:10px;height:10px;border-radius:50%;background:#888;box-shadow:0 0 0 0 #22c55e80;transition:.2s}
+.rcap-dot{width:10px;height:10px;border-radius:50%;background:#888;transition:.2s}
 .rcap-dot.ready{background:#22c55e;box-shadow:0 0 10px 2px #22c55eaa}
 .rcap-coach{position:absolute;top:46%;left:50%;transform:translate(-50%,-50%);
   background:rgba(15,15,18,.82);padding:12px 18px;border-radius:14px;font-size:16px;font-weight:600;
-  max-width:80%;text-align:center;opacity:0;transition:opacity .2s;pointer-events:none}
+  max-width:80%;text-align:center;opacity:0;transition:opacity .2s;pointer-events:none;z-index:3}
 .rcap-coach.show{opacity:1}
 .rcap-bottom{position:absolute;left:0;right:0;bottom:0;padding:14px 14px max(20px,env(safe-area-inset-bottom,20px));
-  background:linear-gradient(#0000,#000a)}
-.rcap-thumbs{display:flex;gap:7px;justify-content:center;flex-wrap:wrap;margin-bottom:14px;min-height:0}
-.rcap-thumb{width:38px;height:50px;border-radius:5px;border:2px solid #fff;object-fit:cover;background:#333}
-.rcap-shutter-row{display:flex;align-items:center;justify-content:center;gap:18px;position:relative}
-.rcap-shutter{width:74px;height:74px;border-radius:50%;background:#fff;border:5px solid #1DB0C9;cursor:pointer;
-  transition:transform .1s}
+  background:linear-gradient(#0000,#000a);z-index:4}
+.rcap-shutter-row{display:flex;align-items:center;justify-content:center}
+.rcap-shutter{width:74px;height:74px;border-radius:50%;background:#fff;border:5px solid #1DB0C9;cursor:pointer;transition:transform .1s}
 .rcap-shutter:active{transform:scale(.92)}
-.rcap-undo,.rcap-done{position:absolute;border:0;border-radius:999px;padding:11px 16px;font-weight:700;
-  font-size:14px;cursor:pointer;font-family:inherit}
-.rcap-undo{left:6px;background:rgba(255,255,255,.18);color:#fff}
-.rcap-done{right:6px;background:#1DB0C9;color:#fff}
-.rcap-done[hidden],.rcap-undo[hidden]{display:none}
+.rcap-review-actions{display:flex;flex-direction:column;gap:10px}
+.rcap-use{border:0;border-radius:14px;padding:16px;background:#0E7C86;color:#fff;font-weight:800;font-size:16px;cursor:pointer;font-family:inherit}
+.rcap-add{border:1px solid rgba(255,255,255,.6);background:transparent;border-radius:14px;padding:15px;color:#fff;font-weight:700;font-size:15px;cursor:pointer;font-family:inherit}
+/* mode visibility */
+.rcap-root[data-mode="live"] .rcap-still,
+.rcap-root[data-mode="live"] .rcap-checklist,
+.rcap-root[data-mode="live"] .rcap-review-actions,
+.rcap-root[data-mode="live"] .rcap-retake{display:none}
+.rcap-root[data-mode="review"] .rcap-frame,
+.rcap-root[data-mode="review"] .rcap-coach,
+.rcap-root[data-mode="review"] .rcap-shutter-row,
+.rcap-root[data-mode="review"] .rcap-flash,
+.rcap-root[data-mode="review"] .rcap-help{display:none}
 .rcap-flash-anim{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:5}
 .rcap-help-panel{position:absolute;inset:0;background:rgba(0,0,0,.7);display:grid;place-items:center;z-index:6;padding:24px}
 .rcap-help-panel[hidden]{display:none}
 .rcap-help-card{background:#fff;color:#173D53;border-radius:18px;padding:22px;max-width:340px}
 .rcap-help-card h3{margin:0 0 12px;font-size:18px}
 .rcap-help-card ul{margin:0 0 18px;padding-left:18px;font-size:14px;line-height:1.5;color:#444}
-.rcap-btn-solid{width:100%;border:0;border-radius:999px;padding:13px;background:#2269B5;color:#fff;
-  font-weight:700;font-size:15px;cursor:pointer;font-family:inherit}
-.rcap-proc{position:absolute;inset:0;background:rgba(0,0,0,.78);display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:16px;z-index:7}
+.rcap-btn-solid{width:100%;border:0;border-radius:999px;padding:13px;background:#2269B5;color:#fff;font-weight:700;font-size:15px;cursor:pointer;font-family:inherit}
+.rcap-proc{position:absolute;inset:0;background:rgba(0,0,0,.78);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:7}
 .rcap-proc[hidden]{display:none}
-.rcap-spin{width:42px;height:42px;border:4px solid #fff3;border-top-color:#1DB0C9;border-radius:50%;
-  animation:rcap-spin .8s linear infinite}
+.rcap-spin{width:42px;height:42px;border:4px solid #fff3;border-top-color:#1DB0C9;border-radius:50%;animation:rcap-spin .8s linear infinite}
 .rcap-proc-msg{font-size:16px;font-weight:600}
 @keyframes rcap-spin{to{transform:rotate(360deg)}}`;
       const style = document.createElement("style");
-      style.id = "rcap-styles";
-      style.textContent = css;
+      style.id = "rcap-styles"; style.textContent = css;
       document.head.appendChild(style);
     }
 
+    /* ------------------------------------------------------- mode + coach -- */
+    _setMode(mode) {
+      this._mode = mode;
+      if (this._ui) this._ui.root.dataset.mode = mode;
+      if (mode === "live") {
+        // Re-arm: require fresh framing before auto-capture fires again.
+        this._prevLuma = null; this._goodStreak = 0;
+        this._cooldownUntil = Date.now() + 1800;
+        this._setCoach("Point at your receipt", false);
+      }
+      this._updateCounter();
+    }
     _setAccent(ready) {
       if (!this._ui) return;
       this._ui.root.style.setProperty("--rcap-accent", ready ? ACCENT_READY : ACCENT_SEARCH);
@@ -284,30 +298,19 @@
     _setCoach(msg, ready) {
       if (!this._ui) return;
       const c = this._ui.coach;
-      if (msg) { c.textContent = msg; c.classList.add("show"); }
-      else { c.classList.remove("show"); }
+      if (msg) { c.textContent = msg; c.classList.add("show"); } else { c.classList.remove("show"); }
       this._setAccent(ready);
     }
     _updateCounter() {
       if (!this._ui) return;
-      this._ui.count.textContent = "Photo " + (this.segments.length + 1);
-      const n = this.segments.length;
-      this._ui.done.hidden = n === 0;
-      this._ui.undo.hidden = n === 0;
-      this._ui.done.textContent = `Use ${n} →`;
-    }
-    _addThumb(canvas) {
-      const t = document.createElement("canvas");
-      t.className = "rcap-thumb";
-      t.width = 38; t.height = 50;
-      t.getContext("2d").drawImage(canvas, 0, 0, 38, 50);
-      this._ui.thumbs.appendChild(t);
+      const n = this._mode === "review" ? this.segments.length : this.segments.length + 1;
+      this._ui.count.textContent = "Photo " + Math.max(1, n);
     }
     _flashAnim() {
       const f = document.createElement("div");
       f.className = "rcap-flash-anim";
       this._ui.root.appendChild(f);
-      f.animate([{ opacity: .0 }, { opacity: .85 }, { opacity: 0 }], { duration: 220 });
+      f.animate([{ opacity: 0 }, { opacity: .85 }, { opacity: 0 }], { duration: 220 });
       setTimeout(() => f.remove(), 240);
     }
 
@@ -316,30 +319,23 @@
       const an = document.createElement("canvas");
       const ctx = an.getContext("2d", { willReadFrequently: true });
       this._loopTimer = setInterval(() => {
-        if (this._busy || !this.video || !this.video.videoWidth) return;
+        if (this._busy || this._mode !== "live" || !this.video || !this.video.videoWidth) return;
         const w = 160, h = Math.max(60, Math.round(160 * this.video.videoHeight / this.video.videoWidth));
         an.width = w; an.height = h;
         ctx.drawImage(this.video, 0, 0, w, h);
         let data;
         try { data = ctx.getImageData(0, 0, w, h).data; } catch (_) { return; }
-
         let sum = 0, glare = 0, motion = 0;
-        const n = w * h;
-        const luma = new Uint8Array(n);
+        const n = w * h, luma = new Uint8Array(n);
         for (let i = 0, p = 0; i < data.length; i += 4, p++) {
           const y = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-          luma[p] = y; sum += y;
-          if (y > 245) glare++;
+          luma[p] = y; sum += y; if (y > 245) glare++;
         }
-        const mean = sum / n;
-        const glareFrac = glare / n;
+        const mean = sum / n, glareFrac = glare / n;
         if (this._prevLuma && this._prevLuma.length === n) {
-          let d = 0;
-          for (let p = 0; p < n; p++) d += Math.abs(luma[p] - this._prevLuma[p]);
-          motion = d / n;
+          let d = 0; for (let p = 0; p < n; p++) d += Math.abs(luma[p] - this._prevLuma[p]); motion = d / n;
         } else { motion = 999; }
         this._prevLuma = luma;
-
         this._evaluate(mean, glareFrac, motion);
       }, 220);
     }
@@ -352,40 +348,48 @@
       else if (glareFrac > o.glareMax) msg = "Glare detected — tilt the receipt";
       else if (motion > o.motionMax) msg = "Hold steady…";
       else { msg = "Looks good — hold still"; ready = true; }
-
       this._setCoach(msg, ready);
-
       if (ready) this._goodStreak++; else this._goodStreak = 0;
-      if (o.autoCapture && ready && this._goodStreak >= o.autoCaptureFrames &&
-          Date.now() > this._cooldownUntil) {
+      if (o.autoCapture && ready && this._goodStreak >= o.autoCaptureFrames && Date.now() > this._cooldownUntil) {
         this._goodStreak = 0;
         this._doCapture(true);
       }
     }
 
     /* ---------------------------------------------------- capture actions -- */
-    _manualCapture() { this._doCapture(false); }
+    _manualCapture() { if (this._mode === "live") this._doCapture(false); }
 
     _doCapture(auto) {
-      if (this._busy) return;
+      if (this._busy || this._mode !== "live") return;
       try {
-        const r = this.capture();   // throws RangeError on luminance fail
+        this.capture();   // throws RangeError on luminance fail
         this._flashAnim();
-        this._addThumb(this.segments[this.segments.length - 1]);
-        this._updateCounter();
-        this._cooldownUntil = Date.now() + 1300;   // pause auto-capture briefly
-        this._setCoach(`Page ${r.count} captured` + (auto ? " (auto)" : ""), true);
+        this._enterReview();
       } catch (err) {
-        // Luminance guardrail rejected this frame — coach instead of failing.
         this._setCoach(err.message, false);
       }
     }
 
-    _undo() {
-      this.removeLastSegment();
-      if (this._ui && this._ui.thumbs.lastChild) this._ui.thumbs.lastChild.remove();
-      this._updateCounter();
+    _enterReview() {
+      const last = this.segments[this.segments.length - 1];
+      if (this._ui && last) {
+        try { this._ui.still.src = last.toDataURL("image/jpeg", 0.85); } catch (_) {}
+      }
+      this._setMode("review");
     }
+
+    _retake() {
+      // Discard the just-captured section and go back to live.
+      this.removeLastSegment();
+      this._setMode("live");
+    }
+
+    _addSection() {
+      // Keep this section; capture the next part of the long receipt.
+      this._setMode("live");
+    }
+
+    _useReceipt() { this._finish(); }
 
     async _finish() {
       if (!this.segments.length || this._busy) return;
@@ -400,11 +404,10 @@
         this._busy = false;
         this._ui.proc.hidden = true;
         if (err && err.rejected) {
-          // Server rejected (e.g. unreadable / duplicate / stale) — let the user retake.
-          this._setCoach(err.message, false);
+          // Server rejected (unreadable / duplicate / stale) — let the user retake.
           this.segments = [];
-          this._ui.thumbs.innerHTML = "";
-          this._updateCounter();
+          this._setMode("live");
+          this._setCoach(err.message, false);
         } else {
           this.close();
           if (this._rejectFlow) this._rejectFlow(err);
@@ -412,15 +415,9 @@
       }
     }
 
-    _cancel() {
-      this.close();
-      if (this._rejectFlow) this._rejectFlow({ cancelled: true });
-    }
+    _cancel() { this.close(); if (this._rejectFlow) this._rejectFlow({ cancelled: true }); }
 
-    close() {
-      this.stop();
-      this._teardownUI();
-    }
+    close() { this.stop(); this._teardownUI(); }
     _teardownUI() {
       if (this._loopTimer) { clearInterval(this._loopTimer); this._loopTimer = null; }
       if (this._ui && this._ui.root) this._ui.root.remove();
@@ -439,19 +436,12 @@
         advanced: [{ focusMode: "continuous" }],
       }};
       const fallback = { audio: false, video: {
-        facingMode: "environment",
-        width: { ideal: idealWidth }, height: { ideal: idealHeight },
+        facingMode: "environment", width: { ideal: idealWidth }, height: { ideal: idealHeight },
       }};
-      try {
-        this.stream = await navigator.mediaDevices.getUserMedia(preferred);
-      } catch (err) {
-        this._emit("status", { phase: "fallback", message: "Using default camera." });
-        this.stream = await navigator.mediaDevices.getUserMedia(fallback);
-      }
-      if (this.video) {
-        this.video.srcObject = this.stream;
-        await this.video.play().catch(() => {});
-      }
+      try { this.stream = await navigator.mediaDevices.getUserMedia(preferred); }
+      catch (err) { this._emit("status", { phase: "fallback", message: "Using default camera." });
+        this.stream = await navigator.mediaDevices.getUserMedia(fallback); }
+      if (this.video) { this.video.srcObject = this.stream; await this.video.play().catch(() => {}); }
       this._setupTorch();
       this._emit("ready", { width: this.video && this.video.videoWidth });
       return this;
@@ -467,10 +457,8 @@
       const caps = track && track.getCapabilities && track.getCapabilities();
       if (!track || !caps || !caps.torch) return;
       this._torchOn = !this._torchOn;
-      try {
-        await track.applyConstraints({ advanced: [{ torch: this._torchOn }] });
-        if (this._ui) this._ui.flash.classList.toggle("on", this._torchOn);
-      } catch (_) {}
+      try { await track.applyConstraints({ advanced: [{ torch: this._torchOn }] });
+        if (this._ui) this._ui.flash.classList.toggle("on", this._torchOn); } catch (_) {}
     }
 
     stop() {
@@ -482,20 +470,15 @@
     capture() {
       const v = this.video;
       if (!v || !v.videoWidth) throw new Error("Camera not started.");
-      const vRect = v.getBoundingClientRect();
-      const rRect = this.reticle.getBoundingClientRect();
-
+      const vRect = v.getBoundingClientRect(), rRect = this.reticle.getBoundingClientRect();
       const scale = Math.max(v.videoWidth / vRect.width, v.videoHeight / vRect.height);
       const dispW = v.videoWidth / scale, dispH = v.videoHeight / scale;
       const offX = (vRect.width - dispW) / 2, offY = (vRect.height - dispH) / 2;
-
       let sx = ((rRect.left - vRect.left) - offX) * scale;
       let sy = ((rRect.top - vRect.top) - offY) * scale;
       let sw = rRect.width * scale, sh = rRect.height * scale;
-      sx = Math.max(0, Math.min(sx, v.videoWidth));
-      sy = Math.max(0, Math.min(sy, v.videoHeight));
-      sw = Math.max(1, Math.min(sw, v.videoWidth - sx));
-      sh = Math.max(1, Math.min(sh, v.videoHeight - sy));
+      sx = Math.max(0, Math.min(sx, v.videoWidth)); sy = Math.max(0, Math.min(sy, v.videoHeight));
+      sw = Math.max(1, Math.min(sw, v.videoWidth - sx)); sh = Math.max(1, Math.min(sh, v.videoHeight - sy));
 
       const dpr = global.devicePixelRatio || 1;
       const outW = Math.round(rRect.width * dpr), outH = Math.round(rRect.height * dpr);
@@ -511,11 +494,9 @@
         canvas.width = outW; canvas.height = outH;
         ctx.drawImage(v, sx, sy, sw, sh, 0, 0, outW, outH);
       }
-
       const luminance = this._screenAndGrayscale(ctx, canvas);
       if (luminance < this.opts.lumaMin) throw new RangeError(`Too dark (${Math.round(luminance)})`);
       if (luminance > this.opts.lumaMax) throw new RangeError(`Too bright (${Math.round(luminance)})`);
-
       this.segments.push(canvas);
       this._emit("segment", { count: this.segments.length, luminance, rotated: rotate });
       return { luminance, rotated: rotate, count: this.segments.length };
@@ -526,8 +507,7 @@
       const data = img.data; let sum = 0; const n = data.length / 4;
       for (let i = 0; i < data.length; i += 4) {
         const y = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-        sum += y;
-        if (this.opts.grayscale) { const g = y | 0; data[i] = data[i + 1] = data[i + 2] = g; }
+        sum += y; if (this.opts.grayscale) { const g = y | 0; data[i] = data[i + 1] = data[i + 2] = g; }
       }
       if (this.opts.grayscale) ctx.putImageData(img, 0, 0);
       return sum / n;
@@ -569,13 +549,11 @@
       });
       if (!urlResp.ok) throw new Error("Could not get an upload URL (HTTP " + urlResp.status + ").");
       const { job_id, upload_url } = await urlResp.json();
-
       this._emit("status", { phase: "uploading", message: "Uploading receipt…", bytes: blob.size });
       const putResp = await fetch(upload_url, {
         method: "PUT", headers: { "Content-Type": "image/jpeg", "X-User-Id": this.opts.userId }, body: blob,
       });
       if (!putResp.ok) throw new Error("Upload failed (HTTP " + putResp.status + ").");
-
       for (let attempt = 1; attempt <= this.opts.maxPolls; attempt++) {
         await new Promise((r) => setTimeout(r, this.opts.pollIntervalMs));
         const s = await fetch(this.opts.endpoints.status + "?job=" + encodeURIComponent(job_id)).then((r) => r.json());
