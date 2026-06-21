@@ -732,20 +732,29 @@
       const confs = results.map((r) => r && r.avg_confidence).filter((v) => v != null);
 
       const norm = (s) => (s || "").replace(/\s+/g, " ").trim().toLowerCase();
-      const eq = (a, b) => norm(a.description) === norm(b.description) &&
-        (a.total == null || b.total == null || Math.abs((a.total || 0) - (b.total || 0)) < 0.01);
+      const sameDesc = (a, b) => norm(a.description) === norm(b.description);
+      // Does `sub` appear as a contiguous run anywhere in `arr`? (match by
+      // description — OCR totals drift between sections.) Prefer the LATEST
+      // position, since the overlap is the lower region of the earlier section.
+      const findRun = (arr, sub) => {
+        for (let start = arr.length - sub.length; start >= 0; start--) {
+          let ok = true;
+          for (let j = 0; j < sub.length; j++) { if (!sameDesc(arr[start + j], sub[j])) { ok = false; break; } }
+          if (ok) return start;
+        }
+        return -1;
+      };
 
       let items = ((results[0] && results[0].line_items) || []).slice();
       for (let s = 1; s < results.length; s++) {
         const next = (results[s] && results[s].line_items) || [];
-        // largest k where the last k of `items` equals the first k of `next`
-        let k = 0;
+        // Largest L where next[:L] matches a contiguous run anywhere in `items`
+        // (the overlap region). Drop it once; append the rest (incl. repeats).
+        let L = 0;
         for (let cand = Math.min(items.length, next.length); cand >= 1; cand--) {
-          let match = true;
-          for (let j = 0; j < cand; j++) { if (!eq(items[items.length - cand + j], next[j])) { match = false; break; } }
-          if (match) { k = cand; break; }
+          if (findRun(items, next.slice(0, cand)) !== -1) { L = cand; break; }
         }
-        items = items.concat(next.slice(k));   // drop only the overlapping run
+        items = items.concat(next.slice(L));
       }
 
       return {
