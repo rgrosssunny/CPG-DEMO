@@ -660,78 +660,85 @@
     clearSegments() { this.segments = []; }
     removeLastSegment() { this.segments.pop(); this._emit("segment", { count: this.segments.length }); }
 
-    /* ------------------------------------------- stitch + transmission ---- */
-    /** Combine sections into ONE clean document. Sections overlap (the user
-     *  lines the next one up with the sliver of the previous), so a naive
-     *  top-to-bottom concat duplicates the shared band and confuses OCR.
-     *  We template-match each section's top against the previous section's
-     *  bottom and draw the shared band only once. */
-    stitch() {
-      if (!this.segments.length) throw new Error("No captured pages to stitch.");
-      if (this.segments.length === 1) return this.segments[0];
-      let result = this.segments[0];
-      for (let i = 1; i < this.segments.length; i++) result = this._stitchPair(result, this.segments[i]);
-      return result;
-    }
-
-    /** Place B below A, removing the overlapping band so it appears once. */
-    _stitchPair(A, B) {
-      let placeY = A.height;   // default: butt-join (no overlap removed)
-      if (this._cvReady && global.cv) {
-        const cv = global.cv;
-        let matA, matB, gA, gB, aRoi, tRoi, res;
-        try {
-          const W = Math.min(A.width, B.width);
-          const tH = Math.max(8, Math.min(Math.round(B.height * 0.35), Math.round(A.height * 0.5)));
-          const searchH = Math.min(A.height, Math.round(A.height * 0.6) + tH);
-          if (W > 8 && searchH > tH) {
-            matA = cv.imread(A); matB = cv.imread(B);
-            gA = new cv.Mat(); gB = new cv.Mat();
-            cv.cvtColor(matA, gA, cv.COLOR_RGBA2GRAY); cv.cvtColor(matB, gB, cv.COLOR_RGBA2GRAY);
-            aRoi = gA.roi(new cv.Rect(0, A.height - searchH, W, searchH));
-            tRoi = gB.roi(new cv.Rect(0, 0, W, tH));
-            res = new cv.Mat();
-            cv.matchTemplate(aRoi, tRoi, res, cv.TM_CCOEFF_NORMED);
-            const mm = cv.minMaxLoc(res);
-            if (mm.maxVal > 0.45) placeY = (A.height - searchH) + mm.maxLoc.y;  // overlap found
-          }
-        } catch (_) { placeY = A.height; }
-        finally { [matA, matB, gA, gB, aRoi, tRoi, res].forEach((m) => { if (m && m.delete) { try { m.delete(); } catch (_) {} } }); }
-      }
-      const outW = Math.max(A.width, B.width);
-      const outH = placeY + B.height;
-      const out = document.createElement("canvas");
-      out.width = outW; out.height = outH;
-      const ctx = out.getContext("2d");
-      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, outW, outH);
-      ctx.drawImage(A, 0, 0);
-      ctx.drawImage(B, 0, placeY);   // overlapping band [placeY..A.height] is covered once by B
-      return out;
-    }
+    /* ------------------------------------------- transmission + merge ----- */
     _toJpegBlob(canvas) {
       return new Promise((resolve, reject) => {
         canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Failed to encode JPEG."))), "image/jpeg", this.opts.jpegQuality);
       });
     }
+
+    /** Analyze EACH captured section with Textract separately, then merge the
+     *  structured line items (dedup by name). This avoids fragile pixel
+     *  stitching of thermal receipts — each section is read cleanly and the
+     *  overlapping band's items are de-duplicated in the structured data. */
     async submit() {
-      const blob = await this._toJpegBlob(this.stitch());
-      this._emit("status", { phase: "requesting-url", message: "Preparing secure upload…" });
-      const urlResp = await fetch(this.opts.endpoints.uploadUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content_type: "image/jpeg" }) });
+      if (this.segments.length <= 1) {
+        const blob = await this._toJpegBlob(this.segments[0]);
+        return this._analyzeBlob(blob, 1, 1);
+      }
+      const results = [];
+      for (let i = 0; i < this.segments.length; i++) {
+        const blob = await this._toJpegBlob(this.segments[i]);
+        try {
+          const r = await this._analyzeBlob(blob, i + 1, this.segments.length);
+          if (r) results.push(r);
+        } catch (err) {
+          // A single unreadable section shouldn't sink the whole receipt —
+          // skip rejections, but surface hard failures.
+          if (!err || !err.rejected) throw err;
+          if (err.result) results.push(err.result);
+        }
+      }
+      if (!results.length) throw new Error("Couldn't read any section of the receipt.");
+      return this._mergeResults(results);
+    }
+
+    /** One image through the pipeline: get-upload-url -> PUT -> poll. */
+    async _analyzeBlob(blob, idx, total) {
+      const label = total > 1 ? ` section ${idx}/${total}` : "";
+      this._emit("status", { phase: "requesting-url", message: "Preparing upload" + label + "…" });
+      const urlResp = await fetch(this.opts.endpoints.uploadUrl, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content_type: "image/jpeg" }),
+      });
       if (!urlResp.ok) throw new Error("Could not get an upload URL (HTTP " + urlResp.status + ").");
       const { job_id, upload_url } = await urlResp.json();
-      this._emit("status", { phase: "uploading", message: "Uploading receipt…", bytes: blob.size });
+      this._emit("status", { phase: "uploading", message: "Uploading" + label + "…", bytes: blob.size });
       const putResp = await fetch(upload_url, { method: "PUT", headers: { "Content-Type": "image/jpeg", "X-User-Id": this.opts.userId }, body: blob });
       if (!putResp.ok) throw new Error("Upload failed (HTTP " + putResp.status + ").");
       for (let attempt = 1; attempt <= this.opts.maxPolls; attempt++) {
         await new Promise((r) => setTimeout(r, this.opts.pollIntervalMs));
         const s = await fetch(this.opts.endpoints.status + "?job=" + encodeURIComponent(job_id)).then((r) => r.json());
-        this._emit("status", { phase: "polling", attempt, status: s.status });
+        this._emit("status", { phase: "polling", attempt, status: s.status, message: "Analyzing" + label + "…" });
         if (s.status === "done") return s.result;
         if (s.status === "rejected") { const e = new Error(s.error || "Receipt rejected."); e.rejected = true; e.result = s.result; throw e; }
         if (s.status === "failed") throw new Error(s.error || "Processing failed.");
         if (s.status === "unknown") throw new Error("Job not found on server.");
       }
       throw new Error("Timed out waiting for OCR result.");
+    }
+
+    /** Merge per-section results: union line items (dedup by description); take
+     *  vendor/date from any section and the total from the section that has one
+     *  (the bottom section carries the receipt total). */
+    _mergeResults(results) {
+      const firstOf = (sel) => { for (const r of results) { const v = sel(r); if (v != null && v !== "") return v; } return null; };
+      const vendor = firstOf((r) => r && r.vendor && r.vendor.name);
+      const date = firstOf((r) => r && r.date);
+      const totals = results.map((r) => r && r.total).filter((v) => v != null);
+      const total = totals.length ? totals[totals.length - 1] : null;
+      const confs = results.map((r) => r && r.avg_confidence).filter((v) => v != null);
+      const seen = new Set(), items = [];
+      for (const r of results) for (const li of (r && r.line_items) || []) {
+        const key = (li.description || "").replace(/\s+/g, " ").trim().toLowerCase();
+        if (!key || seen.has(key)) continue;   // dedup the overlapping band's items
+        seen.add(key); items.push(li);
+      }
+      return {
+        vendor: { name: vendor }, date, total, currency_code: "USD", document_type: "receipt",
+        line_items: items, line_item_count: items.length,
+        avg_confidence: confs.length ? Math.round((confs.reduce((a, b) => a + b, 0) / confs.length) * 100) / 100 : null,
+        source: "aws-textract", merged_sections: results.length,
+      };
     }
 
     _coverCropCanvas(maxW) {
