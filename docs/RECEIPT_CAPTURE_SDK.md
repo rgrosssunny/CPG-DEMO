@@ -2,198 +2,119 @@
 
 `ReceiptCaptureSDK` is a dependency-free, browser-based SDK that captures a
 receipt with the device camera (or an uploaded image), prepares an OCR-optimized
-payload, and delivers it to a cloud backend that runs **Amazon Textract**. It
-ships as a single file — [`static/receipt-capture-sdk.js`](../static/receipt-capture-sdk.js)
-— and is consumed by the member UI in
-[`design_preview_noclip.html`](../design_preview_noclip.html).
+image, and runs it through a cloud backend powered by **Amazon Textract** —
+returning structured receipt data (vendor, date, total, line items).
+
+> **How to read this document**
+> | If you are… | Read |
+> |---|---|
+> | A **stakeholder / lead** wanting to know what it does | **Part 1 — Overview** |
+> | A **developer integrating** the SDK into an app | Parts **1 + 2** |
+> | A **developer maintaining / extending** the SDK | Parts **1 + 3 + 4** |
 
 ---
 
-## 1. Architecture — Cloud-Hybrid
+# Part 1 — Overview
 
-Work is split between the device and the cloud for performance and security.
+*Audience: everyone.*
+
+### What it is
+A single JavaScript file ([`static/receipt-capture-sdk.js`](../static/receipt-capture-sdk.js))
+that you drop into a web page. It opens a full-screen, guided camera experience,
+helps the user frame the receipt, captures an optimized image, and sends it to a
+backend that extracts the receipt's contents with Amazon Textract.
+
+### What it does
+- **Guided camera capture** — rear camera, a fixed alignment box whose edges turn
+  green when the receipt is framed correctly, live lighting coaching, and a flash
+  toggle. Capture is manual (the user taps the shutter).
+- **On-device quality checks** — brightness/glare checks and edge detection so
+  only a real, readable receipt is captured.
+- **Long receipts** — captured in multiple sections; the results are merged into
+  one clean item list (duplicates from the overlap removed, real repeat purchases
+  kept).
+- **Image preparation** — crops to the receipt, corrects rotation, converts to a
+  compressed grayscale JPEG sized for OCR.
+- **Secure delivery** — uploads to the backend and polls for the result; the
+  browser never holds cloud credentials.
+
+### Architecture at a glance (cloud-hybrid)
 
 ```
   ┌──────────────────────────────┐        ┌───────────────────────────┐      ┌────────────┐
   │  CLIENT (browser SDK)         │ HTTPS  │  SERVER (Flask on Render) │      │ AWS        │
-  │  - camera + guided UI         │ ─────► │  /aws/* endpoints         │ ───► │ Textract   │
-  │  - edge detection (OpenCV.js) │        │  - Textract AnalyzeExpense│      │ Analyze-   │
-  │  - crop / rotate / grayscale  │ ◄───── │  - validation + cleanup   │ ◄─── │ Expense    │
-  │  - multi-section merge        │  JSON  │  - (dedup / fraud layer)  │      └────────────┘
-  └──────────────────────────────┘        └───────────────────────────┘
+  │  camera · guided UI · edge    │ ─────► │  /aws/* endpoints         │ ───► │ Textract   │
+  │  detection · crop/grayscale   │ ◄───── │  Textract + validation    │ ◄─── │ Analyze-   │
+  │  · multi-section merge        │  JSON  │                           │      │ Expense    │
+  └──────────────────────────────┘        └───────────────────────────┘      └────────────┘
 ```
 
-**Security boundary.** No fraud validation, OCR, or database logic runs on the
-client. The SDK only *prepares and delivers* media. All extraction, validation,
-and (when enabled) deduplication happen server-side. The browser never holds
-AWS credentials — it talks only to the app's own `/aws/*` endpoints.
+**Security boundary:** all OCR, validation, and (when enabled) fraud/dedup logic
+runs server-side. The client only prepares and delivers the image. The browser
+talks only to the app's own `/aws/*` endpoints — never to AWS directly.
 
-| Layer | Responsibilities |
-|-------|------------------|
-| **Client (SDK)** | Camera control, guidance UI, live edge detection, local image quality checks (luminance), DPR-aware cropping, orientation normalization, grayscale JPEG compression, multi-section capture + merge, upload + polling |
-| **Server (AWS)** | Textract AnalyzeExpense extraction, readability/confidence gating, temporal rules, line-item cleanup, optional cryptographic + semantic deduplication |
-
----
-
-## 2. What the SDK does
-
-### 2.1 Camera capture
-- Requests the **rear camera** with `facingMode: { exact: "environment" }` and
-  `advanced: [{ focusMode: "continuous" }]` for close-up text focus.
-- **Graceful fallback** to `facingMode: "environment"` (then default sensor) if
-  the exact constraint fails.
-- Ideal capture resolution **1920×1080**.
-- The injected `<video>` is forced `playsinline`, `autoplay`, `muted` (both as
-  attributes and properties) for inline rendering on iOS Safari / mobile.
-
-### 2.2 Guided full-screen UI
-A full-viewport overlay with two modes:
-
-**LIVE mode**
-- A **fixed bounding box** (portrait): a top edge + two full-height side rails,
-  open at the bottom so long receipts can extend past it. The box never moves.
-- **Per-edge detection:** each edge turns **green ✓** when the receipt's
-  matching edge lands within tolerance of that fixed box edge, **amber ?**
-  otherwise. This enforces that the receipt fills the frame at a size Textract
-  can read. The **bottom edge** appears only when the receipt's end is actually
-  in view.
-- **Manual capture only** — the user taps the shutter; the SDK never auto-fires.
-- **Lighting coaching:** "Too dark", "Too bright", "Glare — tilt the receipt".
-- **Flash/torch toggle** (shown only if the camera track exposes `torch`).
-- **"Photo N" counter**, help panel, and a long-receipt hint.
-- For continuation sections, a tinted **overlap sliver** of the previous
-  section's bottom is pinned to the top to help the user line up the next part.
-
-**REVIEW mode** (after each capture)
-- The frozen still + a **"Store / Date/Time / Total"** field checklist.
-- Actions: **Retake** · **Use receipt photo** · **Long receipt? Add section**.
-
-### 2.3 Edge detection (OpenCV.js)
-- **Lazy-loaded** (~8 MB WASM) from a CDN when the camera opens; **graceful
-  fallback** to the fixed guide box if it fails to load.
-- Detection is **brightness-band based** (the receipt is lighter than its
-  background) rather than gradient-based — this is robust to interior text,
-  which gradient methods mistake for an edge.
-- **Two gates prevent false positives** (edges lighting up with no receipt):
-  1. **Contrast gate** — the bright band must clearly exceed the background.
-  2. **Text-density gate** — Canny edge density inside the band must be high
-     enough to be *text*. A blank wall, table, or hand is rejected.
-- An edge is reported "in view" only when the bright band **starts/ends inside
-  the frame**; touching a border means that edge is off-screen.
-
-### 2.4 Image processing & normalization
-- **DPR-aware crop:** the fixed box region is mapped onto the raw sensor matrix
-  via `getBoundingClientRect()` ratios and rasterized at
-  `window.devicePixelRatio` for crisp output on Retina/OLED displays.
-- **Skew correction:** if the sensor outputs landscape but the layout is
-  portrait, the canvas is rotated **90° clockwise** before extraction.
-- **Luminance guardrail:** mean Rec.709 relative luminance must be within
-  **[40, 230]** (else the capture is rejected with a coach message).
-- **Compression:** output is a **grayscale JPEG at quality 0.85**.
-
-### 2.5 Multi-section long receipts
-- The user captures the receipt in sections (top → "Add section" → next …).
-- Sections are **not pixel-stitched** (fragile on thermal paper). Instead each
-  section is sent to **Textract independently** and the structured results are
-  **merged**.
-- **Overlap removal:** the capture overlap is a contiguous run of lines shared
-  between sections. The merge finds where one section's leading run matches a
-  contiguous run **anywhere in the accumulated items** (by description, since
-  OCR totals drift) and drops it **once**.
-- **Repeats preserved:** because it matches *runs* (not individual items),
-  legitimately repeated purchases (e.g. 3× the same product) are kept.
-
-### 2.6 Secure transmission + polling
-For each section (or the single image):
-1. `POST /aws/get-upload-url` → returns a `job_id` and a time-limited PUT URL
-   (a local stand-in for an S3 presigned PUT).
-2. `PUT` the compressed JPEG bytes to that URL.
-3. Poll `GET /aws/analyze-status?job=<id>` every **2 s** until terminal
-   (`done` / `rejected` / `failed`), avoiding gateway timeouts during OCR.
-
-### 2.7 Device gating (host page)
-- **Desktop → upload only.** The camera button is hidden; the tray offers
-  "Upload a receipt".
-- **Mobile / tablet → both.** Upload *or* "Capture receipt with camera".
-- Detection uses `pointer: coarse` (+ user-agent) so iPads count as tablets
-  while mouse-driven touch laptops count as desktop.
-- The upload path runs through the **same AWS pipeline** (get-url → PUT → poll).
-
----
-
-## 3. Capture flow
+### The capture experience
 
 ```
- open ──► LIVE (aim; edges go green) ──tap shutter──► REVIEW (frozen still)
-                                                        │
-                          ┌── Retake ──────────────────┤
-                          ├── Add section ──► LIVE (next section) ──► REVIEW
-                          └── Use receipt photo ──► upload + analyze (+ merge)
-                                                        │
-                                            result ◄────┘  (rendered in the tray)
+ open ──► LIVE (aim; box edges turn green) ──tap shutter──► REVIEW (frozen still)
+                                                              │
+                                ┌── Retake ───────────────────┤
+                                ├── Add section ──► LIVE (next part) ──► REVIEW
+                                └── Use receipt photo ──► upload + analyze
+                                                              │
+                                                  result ◄────┘
 ```
 
 ---
 
-## 4. Public API
+# Part 2 — Integration Guide
 
-### Constructor
+*Audience: developers adding the SDK to an app.*
+
+### Requirements
+- **Secure context** — the camera requires `https://` (or `http://localhost`).
+- A **modern browser** with `getUserMedia` (iOS Safari, Android Chrome, desktop Chrome/Edge/Firefox/Safari).
+- A reachable **backend** exposing the `/aws/*` endpoints (see Part 3) with CORS
+  allowing your page's origin.
+
+### Quick start
+
+```html
+<!-- 1. Point at your backend, then load the SDK -->
+<script>window.BACKEND_URL = "https://your-backend.example.com";</script>
+<script src="receipt-capture-sdk.js"></script>
+```
+
 ```js
-const sdk = new ReceiptCaptureSDK(options);
-const result = await sdk.captureFlow();   // opens the full-screen UI
+// 2. Offer the camera only on touch devices; desktop should upload instead.
+const canUseCamera = window.matchMedia("(pointer: coarse)").matches
+  && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+
+// 3. Launch the guided capture and use the result.
+async function scanReceipt() {
+  const base = (window.BACKEND_URL || "").replace(/\/$/, "");
+  const sdk = new ReceiptCaptureSDK({
+    userId: "member-123",
+    endpoints: {
+      uploadUrl: base + "/aws/get-upload-url",
+      status:    base + "/aws/analyze-status",
+    },
+  });
+
+  try {
+    const receipt = await sdk.captureFlow();   // opens the full-screen UI
+    console.log(receipt.vendor.name, receipt.total);
+    receipt.line_items.forEach(li => console.log(li.description, li.total));
+    // → credit cashback, match offers, etc.
+  } catch (err) {
+    if (err.cancelled) return;   // user closed the camera
+    alert(err.message);          // camera couldn't start
+  }
+}
 ```
 
-### Options
-| Option | Default | Description |
-|--------|---------|-------------|
-| `endpoints.uploadUrl` | `/aws/get-upload-url` | Endpoint that returns a job id + PUT URL |
-| `endpoints.status` | `/aws/analyze-status` | Poll endpoint |
-| `userId` | `"demo-user"` | Sent as `X-User-Id` on upload (used for dedup) |
-| `idealWidth` / `idealHeight` | `1920` / `1080` | Requested capture resolution |
-| `jpegQuality` | `0.85` | Output JPEG quality |
-| `grayscale` | `true` | Convert output to grayscale |
-| `lumaMin` / `lumaMax` | `40` / `230` | Luminance guardrail bounds |
-| `glareMax` | `0.14` | Max fraction of near-white pixels before a glare warning |
-| `edgeDetection` | `true` | Enable OpenCV edge detection |
-| `box` | `{left:0.08, right:0.92, top:0.11}` | Fixed bounding box (viewport fractions) |
-| `alignTol` | `0.12` | ±tolerance for an edge to count as aligned (green) |
-| `contrastMin` | `26` | Min brightness range for a band to exist |
-| `textureMin` | `0.035` | Min Canny edge-density (text) to be a real receipt |
-| `pollIntervalMs` | `2000` | Status poll interval |
-| `maxPolls` | `60` | Poll attempts before timeout (~2 min) |
-| `opencvUrl` | `https://docs.opencv.org/4.8.0/opencv.js` | OpenCV.js source |
+### The result object (what `captureFlow()` resolves to)
 
-### Methods
-| Method | Description |
-|--------|-------------|
-| `captureFlow()` → `Promise<result>` | Open the full-screen UI; resolves with the OCR result. Rejects with `{cancelled:true}` if the user closes it. |
-| `submit()` → `Promise<result>` | Encode → upload → poll (per section, then merge). Used internally by the flow; callable directly with `segments` set. |
-| `on(event, cb)` | Subscribe to events. |
-| `close()` / `stop()` | Tear down the UI / stop the camera. |
-| `segmentCount` / `clearSegments()` / `removeLastSegment()` | Manage captured sections. |
-
-### Events
-| Event | Payload |
-|-------|---------|
-| `ready` | `{ width }` — camera started |
-| `status` | `{ phase, message, attempt?, status?, bytes? }` — pipeline progress (`requesting-url`, `uploading`, `polling`, `detector-ready`, `fallback`) |
-| `segment` | `{ count, luminance, ... }` — a section was captured |
-
----
-
-## 5. Backend API (`/aws/*`)
-
-Implemented in [`app.py`](../app.py) with Flask + boto3.
-
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /aws/status` | Reports whether boto3 + AWS credentials are available |
-| `POST /aws/get-upload-url` | Returns `{ job_id, key, upload_url }` (absolute, CORS-friendly) |
-| `PUT /aws/upload/<job_id>` | Receives image bytes; starts Textract analysis in a background thread |
-| `GET /aws/analyze-status?job=<id>` | `{ status: processing \| done \| rejected \| failed, result?, error? }` |
-
-### Normalized result shape
-Textract `AnalyzeExpense` output is mapped to a stable shape the UI consumes:
 ```json
 {
   "vendor": { "name": "WHOLE FOODS MARKET" },
@@ -201,7 +122,9 @@ Textract `AnalyzeExpense` output is mapped to a stable shape the UI consumes:
   "total": 32.54,
   "currency_code": "USD",
   "document_type": "receipt",
-  "line_items": [ { "description": "...", "total": 2.25, "quantity": "0.42 lb" } ],
+  "line_items": [
+    { "description": "OG HONEYCRISP APPLE", "total": 2.39, "quantity": "0.35 lb" }
+  ],
   "line_item_count": 11,
   "avg_confidence": 95.38,
   "source": "aws-textract",
@@ -209,50 +132,148 @@ Textract `AnalyzeExpense` output is mapped to a stable shape the UI consumes:
 }
 ```
 
-### Server-side validation layer
-- **Readability hard block** — rejects if Textract returns no structural text.
-- **Confidence gate** — rejects if average field confidence < `TEXTRACT_MIN_CONFIDENCE` (default 50).
-- **Temporal rules** — rejects future-dated receipts or those older than `RECEIPT_MAX_AGE_DAYS` (default 14).
-- **Line-item cleanup** — strips Textract's phantom rows (multi-line fragments,
-  summary/payment lines like Subtotal/Tax/Total). Does **not** dedup by
-  description, so legitimately repeated items are preserved.
-- **Deduplication (anti-fraud)** — SHA-256 image-collision + semantic composite
-  (`user_vendor_total_date`) checks. **Currently commented out / gated by
-  `DEDUP_ENABLED`** during prototyping; re-enable for production.
+### Error handling
+`captureFlow()` resolves with the result on success. Otherwise:
 
-### Configuration (env)
-`AWS_REGION` · `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (or role) ·
-`ALLOWED_ORIGIN` (CORS) · `RECEIPT_MAX_AGE_DAYS` · `TEXTRACT_MIN_CONFIDENCE` ·
-`DEDUP_ENABLED`.
+| Outcome | How it surfaces |
+|---|---|
+| User closes the camera | Promise **rejects** with `{ cancelled: true }` |
+| Camera can't start (no permission, not HTTPS) | Promise **rejects** with an `Error` |
+| Server rejects the receipt (unreadable, low confidence, too old) | Shown **inside the SDK's UI** (error panel with Retake / Close); the user retakes or closes (→ `cancelled`) |
+
+So your `try/catch` only needs to handle **cancel** and **camera-start failure** —
+analysis rejections are presented to the user in the capture UI itself.
+
+### Options
+| Option | Default | Description |
+|--------|---------|-------------|
+| `endpoints.uploadUrl` | `/aws/get-upload-url` | Endpoint returning a job id + PUT URL |
+| `endpoints.status` | `/aws/analyze-status` | Poll endpoint |
+| `userId` | `"demo-user"` | Sent as `X-User-Id` on upload (used by dedup) |
+| `idealWidth` / `idealHeight` | `1920` / `1080` | Requested capture resolution |
+| `jpegQuality` | `0.85` | Output JPEG quality |
+| `grayscale` | `true` | Convert output to grayscale |
+| `lumaMin` / `lumaMax` | `40` / `230` | Luminance guardrail bounds |
+| `glareMax` | `0.14` | Near-white fraction before a glare warning |
+| `edgeDetection` | `true` | Enable OpenCV edge detection |
+| `box` | `{left:0.08, right:0.92, top:0.11}` | Fixed alignment box (viewport fractions) |
+| `alignTol` | `0.12` | ±tolerance for an edge to count as aligned (green) |
+| `contrastMin` / `textureMin` | `26` / `0.035` | Real-receipt detection gates |
+| `pollIntervalMs` / `maxPolls` | `2000` / `60` | Status polling cadence / ceiling (~2 min) |
+| `opencvUrl` | `…/opencv.js` | OpenCV.js source (lazy-loaded) |
+
+### Methods & events
+| Method | Description |
+|--------|-------------|
+| `new ReceiptCaptureSDK(options)` | Create an instance |
+| `captureFlow()` → `Promise<result>` | Open the guided UI; resolve with the OCR result |
+| `on(event, cb)` | Subscribe to progress events |
+| `close()` / `stop()` | Tear down the UI / stop the camera |
+
+| Event | Payload | When |
+|-------|---------|------|
+| `ready` | `{ width }` | Camera started |
+| `segment` | `{ count, luminance }` | A section was captured |
+| `status` | `{ phase, message, attempt?, status? }` | Pipeline progress (`uploading`, `polling`, `detector-ready`, …) |
+
+### Device gating (desktop vs mobile)
+The camera should be offered **only on touch devices**; desktops should upload an
+image instead (sent through the same backend). Detect with
+`matchMedia("(pointer: coarse)")` (this treats iPads as tablets and mouse-driven
+touch laptops as desktops). The upload path uses the same
+`get-upload-url → PUT → poll` endpoints with the chosen file as the body.
 
 ---
 
-## 6. Tech stack & dependencies
+# Part 3 — Technical Internals
 
-| Area | Technology |
-|------|------------|
-| SDK | Vanilla ES (no build step), Canvas 2D, `getUserMedia`, MediaStream `torch` |
-| Edge detection | OpenCV.js 4.8 (WASM, lazy-loaded from CDN) |
-| Backend | Python · Flask · flask-cors · boto3 · gunicorn |
-| OCR | Amazon Textract `AnalyzeExpense` (synchronous, image bytes) |
-| Hosting | GitHub Pages (static frontend) + Render (Flask backend) |
+*Audience: developers maintaining or extending the SDK.*
+
+### 3.1 Camera constraints
+Requests the rear camera with `facingMode:{exact:"environment"}` and
+`advanced:[{focusMode:"continuous"}]`; falls back to `facingMode:"environment"`
+then the default sensor. Ideal resolution 1920×1080. The `<video>` is forced
+`playsinline`/`autoplay`/`muted` (attributes **and** properties) for iOS Safari.
+
+### 3.2 Edge detection (OpenCV.js)
+- **Lazy-loaded** (~8 MB WASM) from a CDN when the camera opens; falls back to the
+  fixed guide box (no green/▼ feedback) if it fails to load.
+- **Brightness-band** detection — the receipt is lighter than its background — not
+  gradient-based, which would mistake interior text for an edge.
+- **False-positive gates:** (1) a contrast gate (the bright band must exceed the
+  background) and (2) a Canny **text-density** gate (smooth surfaces like walls or
+  hands are rejected).
+- **Per-edge state:** an edge is "in view" only when the band starts/ends inside
+  the frame; it turns **green** when that edge lands within `alignTol` of the fixed
+  box edge. The **bottom** line appears only when the receipt's end is detected.
+
+### 3.3 Image processing
+- **DPR-aware crop:** the fixed box is mapped onto the raw sensor matrix via
+  `getBoundingClientRect()` ratios and rasterized at `devicePixelRatio`.
+- **Skew correction:** landscape sensor + portrait layout → rotate the canvas 90° CW.
+- **Luminance guardrail:** mean Rec.709 luminance must be within `[lumaMin, lumaMax]`.
+- **Output:** grayscale JPEG at `jpegQuality`.
+
+### 3.4 Multi-section merge
+Sections are **not pixel-stitched** (fragile on thermal paper). Each section is
+sent to Textract independently, then results are merged:
+- The capture overlap is a contiguous run of lines shared between sections.
+- The merge finds where the next section's leading run matches a contiguous run
+  **anywhere** in the accumulated items (matched by description, since OCR totals
+  drift) and drops that run **once**.
+- Because it matches *runs*, legitimately repeated purchases are preserved.
+
+### 3.5 Backend API (`/aws/*`)
+Flask + boto3 ([`app.py`](../app.py)).
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /aws/status` | Whether boto3 + AWS credentials are available |
+| `POST /aws/get-upload-url` | Returns `{ job_id, key, upload_url }` (absolute, CORS-friendly) |
+| `PUT /aws/upload/<job_id>` | Receives image bytes; starts Textract in a background thread |
+| `GET /aws/analyze-status?job=<id>` | `{ status: processing\|done\|rejected\|failed, result?, error? }` |
+
+**Server-side validation layer:** readability hard block · confidence gate
+(`TEXTRACT_MIN_CONFIDENCE`, default 50) · temporal rules (future-dated / older than
+`RECEIPT_MAX_AGE_DAYS`, default 14) · line-item cleanup (strips Textract phantom
+rows + summary/payment lines; does **not** dedup by description, so repeats
+survive) · deduplication (SHA-256 image hash + `user_vendor_total_date` semantic
+key) — **currently commented out / gated by `DEDUP_ENABLED`** during prototyping.
+
+### 3.6 Code map
+| File | Contains |
+|------|----------|
+| `static/receipt-capture-sdk.js` | The SDK: UI build, camera, `_detectEdges`, `_captureBox`, `submit`/`_analyzeBlob`/`_mergeResults` |
+| `app.py` | `/aws/*` routes, `normalize_textract`, `run_analyze` (validation), `_clean_line_items` |
+| `design_preview_noclip.html` | Reference integration: device gating, tray, upload path, result rendering |
 
 ---
 
-## 7. Limitations & production extension points
+# Part 4 — Limitations & Production Roadmap
 
-- **Edge/bottom detection** relies on the receipt being lighter than its
-  background — works best on a **dark, non-shiny surface**; struggles on white
-  tables. A heavier on-device ML model would improve this.
-- **Overlap merge matches by description**; if the same line is OCR'd
-  differently between sections, a duplicate can slip through. Adding fuzzy
-  (edit-distance) matching would absorb that drift.
-- **OpenCV.js is ~8 MB**, lazy-loaded on first camera open (one-time per
-  session); on slow networks edge detection activates a few seconds in.
-- **Backend is a lightweight stand-in:** Textract runs synchronously on the
-  uploaded bytes (no S3), jobs/dedup live in process memory. Production would
-  use **API Gateway + Lambda + S3 presigned PUT + async Textract + DynamoDB**
-  for the dedup indexes — the client pipeline (presigned PUT + polling) already
-  matches that shape, so only the server changes.
-- **Textract `AnalyzeExpense` synchronous** path supports JPEG/PNG (not PDF);
-  PDF/async would require the S3-backed flow.
+### Known limitations
+- **Edge/bottom detection** needs the receipt lighter than its background — best on
+  a dark, non-shiny surface; weak on white tables. A heavier on-device ML model
+  would improve robustness.
+- **Overlap merge matches by description** — if the same line is OCR'd differently
+  between sections, a duplicate can slip through. Fuzzy (edit-distance) matching
+  would absorb that drift.
+- **OpenCV.js is ~8 MB**, lazy-loaded on first camera open; on slow networks edge
+  detection activates a few seconds in (capture still works meanwhile).
+- **Textract synchronous `AnalyzeExpense`** supports JPEG/PNG, not PDF.
+
+### Production extension points
+The current backend is a lightweight stand-in: Textract runs synchronously on the
+uploaded bytes (no S3), and jobs/dedup live in process memory. A production build
+would use **API Gateway + Lambda + an S3 presigned PUT + asynchronous Textract +
+DynamoDB** for the dedup indexes. The client pipeline (presigned PUT + polling)
+already matches that shape, so **only the server changes** — the SDK is unaffected.
+
+### Configuration (backend env)
+`AWS_REGION` · AWS credentials (env or IAM role) · `ALLOWED_ORIGIN` (CORS) ·
+`RECEIPT_MAX_AGE_DAYS` · `TEXTRACT_MIN_CONFIDENCE` · `DEDUP_ENABLED`.
+
+### Tech stack
+Vanilla ES + Canvas 2D + `getUserMedia` (SDK) · OpenCV.js 4.8 (WASM, lazy) ·
+Flask + flask-cors + boto3 + gunicorn (backend) · Amazon Textract `AnalyzeExpense`
+· GitHub Pages (frontend) + Render (backend).
