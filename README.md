@@ -39,6 +39,9 @@ For production, swap to a WSGI server (e.g. `gunicorn app:app`).
 
 ## AWS Textract camera-capture SDK (experimental)
 
+📄 **Full technical spec:** [docs/RECEIPT_CAPTURE_SDK.md](docs/RECEIPT_CAPTURE_SDK.md)
+
+
 `design_preview_noclip.html` includes a client-side capture SDK
 (`static/receipt-capture-sdk.js`) that tests **Amazon Textract** alongside the
 Veryfi path. It runs the full client engine from the spec — rear-camera capture
