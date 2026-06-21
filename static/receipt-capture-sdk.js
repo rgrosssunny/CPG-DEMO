@@ -717,9 +717,12 @@
       throw new Error("Timed out waiting for OCR result.");
     }
 
-    /** Merge per-section results: union line items (dedup by description); take
-     *  vendor/date from any section and the total from the section that has one
-     *  (the bottom section carries the receipt total). */
+    /** Merge per-section results. The capture overlap is a CONTIGUOUS RUN of
+     *  lines shared at the seam (end of section N == start of section N+1), so
+     *  we drop that boundary run once and keep everything else — preserving
+     *  legitimately repeated purchases (e.g. 3x the same item) anywhere on the
+     *  receipt. Vendor/date come from any section; total from the section that
+     *  has one (the bottom section carries the receipt total). */
     _mergeResults(results) {
       const firstOf = (sel) => { for (const r of results) { const v = sel(r); if (v != null && v !== "") return v; } return null; };
       const vendor = firstOf((r) => r && r.vendor && r.vendor.name);
@@ -727,12 +730,24 @@
       const totals = results.map((r) => r && r.total).filter((v) => v != null);
       const total = totals.length ? totals[totals.length - 1] : null;
       const confs = results.map((r) => r && r.avg_confidence).filter((v) => v != null);
-      const seen = new Set(), items = [];
-      for (const r of results) for (const li of (r && r.line_items) || []) {
-        const key = (li.description || "").replace(/\s+/g, " ").trim().toLowerCase();
-        if (!key || seen.has(key)) continue;   // dedup the overlapping band's items
-        seen.add(key); items.push(li);
+
+      const norm = (s) => (s || "").replace(/\s+/g, " ").trim().toLowerCase();
+      const eq = (a, b) => norm(a.description) === norm(b.description) &&
+        (a.total == null || b.total == null || Math.abs((a.total || 0) - (b.total || 0)) < 0.01);
+
+      let items = ((results[0] && results[0].line_items) || []).slice();
+      for (let s = 1; s < results.length; s++) {
+        const next = (results[s] && results[s].line_items) || [];
+        // largest k where the last k of `items` equals the first k of `next`
+        let k = 0;
+        for (let cand = Math.min(items.length, next.length); cand >= 1; cand--) {
+          let match = true;
+          for (let j = 0; j < cand; j++) { if (!eq(items[items.length - cand + j], next[j])) { match = false; break; } }
+          if (match) { k = cand; break; }
+        }
+        items = items.concat(next.slice(k));   // drop only the overlapping run
       }
+
       return {
         vendor: { name: vendor }, date, total, currency_code: "USD", document_type: "receipt",
         line_items: items, line_item_count: items.length,

@@ -292,10 +292,14 @@ _LINEITEM_NOISE = re.compile(
 
 def _clean_line_items(items):
     """Drop Textract's phantom line items (garbled multi-line fragments, summary
-    or payment rows) and de-duplicate by description, so the count matches the
-    real products on the receipt. AnalyzeExpense over-segments multi-line entries
-    ("Qty .. @ ../lb", "Savings with Prime") into junk rows — strip those here."""
-    cleaned, seen = [], set()
+    or payment rows). AnalyzeExpense over-segments multi-line entries ("Qty .. @
+    ../lb", "Savings with Prime") into junk rows — strip those here.
+
+    NOTE: we intentionally do NOT de-duplicate by description — a customer can
+    legitimately buy several of the same product (multiple identical lines), and
+    each must be kept. Cross-section overlap from multi-photo capture is removed
+    separately by boundary-sequence matching in the client merge."""
+    cleaned = []
     for li in items:
         desc = (li.get("description") or "").strip()
         if not desc or "\n" in desc:          # multi-line => fragment, not a product
@@ -304,10 +308,6 @@ def _clean_line_items(items):
             continue
         if _LINEITEM_NOISE.search(desc):        # summary / payment line
             continue
-        key = re.sub(r"\s+", " ", desc).lower()
-        if key in seen:                          # duplicate description
-            continue
-        seen.add(key)
         cleaned.append(li)
     return cleaned
 
