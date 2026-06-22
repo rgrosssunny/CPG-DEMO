@@ -110,5 +110,21 @@
     "sizes": [
       { "size": "6 ct", "upc": "070074679006", "cashback": 3.50 }
     ]
+  },
+  {
+    "upc": "2113007100",
+    "product": "Milk",
+    "brand": "",
+    "category": "food-and-produce",
+    "cashback": 1.00,
+    "campaign_id": "CMP-1008",
+    "icon": "🥛",
+    "expires": "2026-12-31",
+    "status": "active",
+    "tagline": "Vitamin D or 2% — $1 back",
+    "sizes": [
+      { "size": "Vitamin D", "upc": "2113007100", "cashback": 1.00 },
+      { "size": "2%", "upc": "2113007101", "cashback": 1.00 }
+    ]
   }
 ]
