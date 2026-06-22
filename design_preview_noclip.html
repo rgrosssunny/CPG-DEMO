@@ -617,8 +617,8 @@ body.cashback-only .appbar .iconbtn{color:#fff}
 <div class="scrim" id="barcodeScrim">
   <div class="sheet" id="barcodeSheet">
     <div class="grip"></div>
-    <h2>Scan a product</h2>
-    <p class="sub-h">Check a barcode against active offers. Decoding happens in your browser — only the UPC number is sent, never an image.</p>
+    <h2 id="barcodeTitle">Scan a product</h2>
+    <p class="sub-h" id="barcodeSub">Check a barcode against active offers. Decoding happens in your browser — only the UPC number is sent, never an image.</p>
     <div id="reader" style="border-radius:var(--r-md);overflow:hidden"></div>
     <div style="display:flex;gap:10px;margin-top:12px">
       <button id="scanStart" class="btn btn-primary" style="flex:1;justify-content:center">Start camera</button>
@@ -920,41 +920,48 @@ function handleFile(f){
   else{ preview.innerHTML=`<p class="muted small">Selected: ${esc(f.name)}</p>`; }
 }
 
-/* match Veryfi line items against active offers (tiered: UPC then fuzzy name) */
+/* Match line items to active offers.
+   Tier 1 — UPC (printed or recovered): via="upc", confidence="verified".
+   Tier 2 — fuzzy name, scored: confidence "high" | "medium" | "low".
+   Outcome (decided in showReceiptResult): UPC + high => auto-credit;
+   medium/low => scan-to-verify (then credit or decline). */
 function matchReceipt(veryfi){
   const items = Array.isArray(veryfi.line_items)?veryfi.line_items:[];
-  const all=[]; let fuzzyOnly=false;
+  const all=[];
   for(const li of items){
     const desc=(li.description||li.text||"").toLowerCase();
     const liUpcs=new Set();
     [li.upc,li.sku,li.reference].forEach(c=>{ if(c) upcVariants(c).forEach(x=>liUpcs.add(x)); });
     (li.product_details||[]).forEach(pd=>[pd.ean,pd.gtin_14,pd.upc].forEach(c=>{ if(c) upcVariants(c).forEach(x=>liUpcs.add(x)); }));
-    let found=null, via=null, matchSize=null, cash=null;
+    let found=null, via=null, matchSize=null, cash=null, confidence=null;
     for(const o of state.offers){
       if(o.status==="exhausted") continue;
-      // tier 1: UPC (primary or any qualifying size)
       const codes=[{size:null,upc:o.upc,cashback:o.cashback}].concat(o.sizes||[]);
       const sz=codes.find(c=>[...upcVariants(c.upc)].some(x=>liUpcs.has(x)));
-      if(sz){ found=o; via="upc"; matchSize=sz.size; cash=sz.cashback!=null?sz.cashback:o.cashback; break; }
+      if(sz){ found=o; via="upc"; matchSize=sz.size; cash=sz.cashback!=null?sz.cashback:o.cashback; confidence="verified"; break; }
     }
     if(!found && desc){
-      // tier 3: fuzzy name (brand or key product token appears in description)
+      let best=null, bestScore=-1;
       for(const o of state.offers){
         if(o.status==="exhausted") continue;
         const brand=(o.brand||"").toLowerCase();
         const tokens=(o.product||"").toLowerCase().split(/[^a-z0-9]+/).filter(w=>w.length>3);
-        if((brand && desc.includes(brand)) || tokens.some(t=>desc.includes(t))){ found=o; via="name"; cash=o.cashback; fuzzyOnly=true; break; }
+        const brandHit=!!(brand && desc.includes(brand));
+        const hits=tokens.filter(t=>desc.includes(t));
+        const strong=hits.filter(t=>t.length>=5);          // distinctive (longer) tokens
+        if(!brandHit && hits.length===0) continue;          // no signal at all
+        const conf = (brandHit && hits.length>=1) ? "high"
+                   : (brandHit || strong.length>=1) ? "medium" : "low";
+        const score=(brandHit?3:0)+hits.length+strong.length;
+        if(score>bestScore){ bestScore=score; best={o,conf}; }
       }
+      if(best){ found=best.o; via="name"; confidence=best.conf; cash=best.o.cashback; }
     }
     if(found && !all.some(m=>m.offer.campaign_id===found.campaign_id)){
-      all.push({offer:found, line:li, via, size:matchSize, cashback:Number(cash||found.cashback||0)});
+      all.push({offer:found, line:li, via, size:matchSize, cashback:Number(cash||found.cashback||0), confidence});
     }
   }
-  // No-clip model: every active offer matched on the receipt is credited automatically.
-  const redeemed = all;
-  const suggested = [];
-  fuzzyOnly = redeemed.some(m=>m.via==="name"); // any name-only match routes to review
-  return {redeemed, suggested, fuzzyOnly};
+  return {redeemed:all, suggested:[]};
 }
 
 /* Send an uploaded receipt image through the SAME AWS Textract pipeline the
@@ -1061,97 +1068,140 @@ function showReceiptError(msg, detail){
 window.resetReceiptAndRetry=()=>{ resetReceipt(); };
 window.closeReceiptDone=()=>{ closeReceipt(); };
 
+let currentRx=null;     // current receipt result being acted on
+let verifyIdx=null;     // index of the line item being barcode-verified (null = normal scan)
+
+function rxSummaryHtml(d){
+  return `<dl class="kv">
+      <div><dt>Store</dt><dd>${esc((d.vendor&&d.vendor.name)||"—")}</dd></div>
+      <div><dt>Date</dt><dd>${esc(d.date?String(d.date).slice(0,10):"—")}</dd></div>
+      <div><dt>Total</dt><dd>${d.total!=null?money(d.total):"—"}</dd></div>
+      <div><dt>Items read</dt><dd>${Array.isArray(d.line_items)?d.line_items.length:0}</dd></div>
+    </dl>
+    <details><summary>View raw OCR JSON</summary><pre>${esc(JSON.stringify(d,null,2))}</pre></details>`;
+}
+
 function showReceiptResult(d){
   const vendor=(d.vendor&&d.vendor.name)||"Unknown store";
   const date=d.date? String(d.date).slice(0,10):"—";
-  const total=d.total!=null?money(d.total):"—";
-  const {redeemed, suggested, fuzzyOnly}=matchReceipt(d);
-
+  const {redeemed}=matchReceipt(d);
   $("rcStep1").classList.add("hidden");
-  const r=$("rcResult"); r.classList.remove("hidden");
-
-  // date eligibility (FRD-06) — soft check
-  let dateWarn="";
-  if(date!=="—"){
-    const days=Math.round((Date.now()-new Date(date+"T00:00:00").getTime())/86400000);
-    if(days>REVIEW_DAYS) dateWarn=`Purchased ${days} days ago — outside the ${REVIEW_DAYS}-day claim window, so this is routed for review.`;
-  }
-
-  const receiptSummary=`
-    <dl class="kv">
-      <div><dt>Store</dt><dd>${esc(vendor)}</dd></div>
-      <div><dt>Date</dt><dd>${esc(date)}</dd></div>
-      <div><dt>Total</dt><dd>${esc(total)}</dd></div>
-      <div><dt>Items read</dt><dd>${Array.isArray(d.line_items)?d.line_items.length:0}</dd></div>
-    </dl>
-    <details><summary>View raw Veryfi JSON</summary><pre>${esc(JSON.stringify(d,null,2))}</pre></details>`;
-
-  const suggestHtml = "";   // no-clip flow: nothing to suggest
+  $("rcResult").classList.remove("hidden");
 
   if(redeemed.length===0){
     state.submissions.unshift({icon:"🧾",store:vendor,detail:"No eligible items found",when:"Just now",status:"declined",label:"Declined"});
     renderSubs();
-    r.innerHTML=`
-      <div class="result-hero"><div class="rj">🔍</div>
-        <div class="rt">No eligible items found</div>
+    $("rcResult").innerHTML=`
+      <div class="result-hero"><div class="rj">🔍</div><div class="rt">No eligible items found</div>
         <div class="rd">We read your receipt but didn't find any products matching an active cash back offer.</div></div>
-      ${receiptSummary}
+      ${rxSummaryHtml(d)}
       <button class="btn btn-primary btn-block" style="margin-top:14px" onclick="closeReceiptDone();switchTab('shop')">View active offers</button>
       <button class="btn btn-ghost btn-block" style="margin-top:10px" onclick="closeReceiptDone()">Done</button>`;
     return;
   }
 
-  const totalCash=redeemed.reduce((s,m)=>s+Number(m.cashback||0),0);
-  const itemsHtml=redeemed.map(m=>`
-    <div class="matched-item"><span>${m.offer.icon||"•"} ${esc(m.offer.product)}${m.size?" ("+esc(m.size)+")":""} <span class="tag ${m.via==="upc"?"":"warn"}">${m.via==="upc"?"UPC match":"Name match"}</span></span><span class="mc">+${money(m.cashback)}</span></div>`).join("");
-
-  // clipped offers that weren't on this receipt — they stay clipped
-  const notFound = clippedActiveOffers().filter(o=>!redeemed.some(m=>m.offer.campaign_id===o.campaign_id));
-  const notFoundHtml = notFound.length
-    ? `<div class="banner warn">Still clipped (not on this receipt): ${notFound.map(o=>esc(o.brand||o.product)).join(", ")}.</div>` : "";
-
-  const needsReview = fuzzyOnly || !!dateWarn; // name-only matches go to manual review (MAT-02 / ERR-04)
-
-  if(needsReview){
-    state.cashbackPending += totalCash;
+  // Temporal gate (separate from matching): out-of-window -> manual review for the whole receipt.
+  let dateWarn="";
+  if(date!=="—"){ const days=Math.round((Date.now()-new Date(date+"T00:00:00").getTime())/86400000);
+    if(days>REVIEW_DAYS) dateWarn=`Purchased ${days} days ago — outside the ${REVIEW_DAYS}-day claim window.`; }
+  if(dateWarn){
+    const totalCash=redeemed.reduce((s,m)=>s+m.cashback,0);
+    state.cashbackPending+=totalCash;
     state.submissions.unshift({icon:"🧾",store:vendor,detail:`${redeemed.length} item(s) · ${money(totalCash)} pending`,when:"Just now",status:"pending",label:"Pending review"});
     renderStrip(); renderSubs();
-    r.innerHTML=`
+    $("rcResult").innerHTML=`
       <div class="result-hero"><div class="rj">⏳</div><div class="rt">${money(totalCash)} pending review</div>
-        <div class="rd">We found eligible items but need a quick check. You'll hear back within 24 hours.</div></div>
-      ${dateWarn?`<div class="banner warn">${esc(dateWarn)}</div>`:`<div class="banner info">Matched by product name — routed for confirmation before crediting.</div>`}
-      <div style="margin:4px 2px">${itemsHtml}</div>
-      ${notFoundHtml}${suggestHtml}
-      ${receiptSummary}
+        <div class="rd">You'll hear back within 24 hours.</div></div>
+      <div class="banner warn">${esc(dateWarn)}</div>${rxSummaryHtml(d)}
       <button class="btn btn-primary btn-block" style="margin-top:14px" onclick="closeReceiptDone()">Got it</button>`;
     toast("Receipt submitted — pending review");
     return;
   }
 
-  // approved & credited (UX-02)
-  state.cashbackEarned += totalCash;
-  state.balance += totalCash;
-  state.submissions.unshift({icon:"🧾",store:vendor,detail:`${redeemed.map(m=>m.offer.brand).join(", ")} · ${money(totalCash)} cash back`,when:"Just now",status:"credited",label:"Credited"});
-  renderStrip(); renderSubs();
-  r.innerHTML=`
-    <div class="result-hero"><div class="rj">🎉</div><div class="rt">${money(totalCash)} cash back approved!</div>
-      <div class="rd">Credited to your card. New balance ${money(state.balance)}.</div></div>
-    <div style="margin:4px 2px">${itemsHtml}</div>
-    ${notFoundHtml}${suggestHtml}
-    ${receiptSummary}
-    <button class="btn btn-primary btn-block" style="margin-top:14px" onclick="closeReceiptDone()">Done</button>`;
-  toast(`${money(totalCash)} cash back added 🎉`);
+  // Classify: UPC + HIGH fuzzy => auto-credit; MEDIUM/LOW fuzzy => scan-to-verify.
+  currentRx={ raw:d, vendor,
+    items: redeemed.map(m=>({offer:m.offer, size:m.size, cashback:m.cashback, via:m.via, confidence:m.confidence,
+      status:(m.via==="upc"||m.confidence==="high")?"credited":"toverify"})) };
+  const autoCash=currentRx.items.filter(i=>i.status==="credited").reduce((s,i)=>s+i.cashback,0);
+  if(autoCash>0){ state.cashbackEarned+=autoCash; state.balance+=autoCash; }
+  renderStrip();
+  renderRxResult();
 }
+
+function rxRow(i){
+  const idx=currentRx.items.indexOf(i);
+  const tag = i.status==="credited" ? `<span class="tag">${i.via==="upc"?"UPC match":(i.verified?"Scan verified":"Name match")}</span>`
+            : i.status==="declined" ? `<span class="tag gray">Not verified</span>`
+            : `<span class="tag warn">Name match · ${i.confidence}</span>`;
+  const right = i.status==="toverify"
+    ? `<button class="btn btn-brand" style="width:auto;padding:8px 12px;font-size:12px" onclick="startVerify(${idx})">Scan to verify +${money(i.cashback)}</button>`
+    : `<span class="mc"${i.status==="declined"?' style="color:var(--ink-400)"':''}>${i.status==="credited"?"+"+money(i.cashback):"—"}</span>`;
+  return `<div class="matched-item"${i.status==="declined"?' style="opacity:.6"':''}><span>${i.offer.icon||"•"} ${esc(i.offer.product)}${i.size?" ("+esc(i.size)+")":""} ${tag}</span>${right}</div>`;
+}
+
+function renderRxResult(){
+  const rx=currentRx; if(!rx) return;
+  const toverify=rx.items.filter(i=>i.status==="toverify");
+  const credited=rx.items.filter(i=>i.status==="credited");
+  const creditedCash=credited.reduce((s,i)=>s+i.cashback,0);
+  const hero = toverify.length
+    ? `<div class="result-hero"><div class="rj">🔎</div><div class="rt">Verify ${toverify.length} item${toverify.length>1?"s":""} to claim</div>
+        <div class="rd">These were matched by product name. Scan each one's barcode to confirm the purchase and claim its cash back.${credited.length?" "+money(creditedCash)+" already credited.":""}</div></div>`
+    : `<div class="result-hero"><div class="rj">🎉</div><div class="rt">${money(creditedCash)} cash back approved!</div>
+        <div class="rd">Credited to your card. New balance ${money(state.balance)}.</div></div>`;
+  const btn = toverify.length
+    ? `<button class="btn btn-ghost btn-block" style="margin-top:14px" onclick="finishRx()">Done — decline the rest</button>`
+    : `<button class="btn btn-primary btn-block" style="margin-top:14px" onclick="finishRx()">Done</button>`;
+  $("rcResult").innerHTML=hero+`<div style="margin:6px 2px">${rx.items.map(rxRow).join("")}</div>`+rxSummaryHtml(rx.raw)+btn;
+}
+
+window.startVerify=function(idx){
+  verifyIdx=idx;
+  const it=currentRx.items[idx];
+  $("barcodeTitle").textContent="Verify "+(it.offer.brand||it.offer.product);
+  $("barcodeSub").textContent="Scan this product's barcode to confirm your purchase and claim "+money(it.cashback)+".";
+  scanResult.innerHTML=`<div class="banner info">Verifying: ${esc(it.offer.product)}${it.size?" ("+esc(it.size)+")":""}</div>`;
+  manualUpc.value=""; barcodeScrim.classList.add("open");
+};
+
+function verifyScan(upc){
+  const it=currentRx&&currentRx.items[verifyIdx]; if(!it){ closeBarcode(); return; }
+  const w=upcVariants(String(upc).replace(/\D/g,""));
+  const codes=[{upc:it.offer.upc}].concat(it.offer.sizes||[]);
+  const ok=codes.some(c=>[...upcVariants(c.upc)].some(x=>w.has(x)));
+  if(ok){
+    it.status="credited"; it.verified=true; state.cashbackEarned+=it.cashback; state.balance+=it.cashback; renderStrip();
+    verifyIdx=null; closeBarcode(); renderRxResult();
+    toast(`${money(it.cashback)} verified & added 🎉`);
+  }else{
+    scanResult.innerHTML=`<div class="banner err">That barcode isn't ${esc(it.offer.product)}. Scan the correct product to claim, or close to skip.</div>`;
+  }
+}
+
+window.finishRx=function(){
+  if(currentRx){
+    const credited=currentRx.items.filter(i=>i.status==="credited");
+    const declined=currentRx.items.filter(i=>i.status==="toverify");
+    declined.forEach(i=>i.status="declined");
+    const cash=credited.reduce((s,i)=>s+i.cashback,0);
+    if(credited.length) state.submissions.unshift({icon:"🧾",store:currentRx.vendor,detail:`${[...new Set(credited.map(i=>i.offer.brand))].join(", ")} · ${money(cash)} cash back`,when:"Just now",status:"credited",label:"Credited"});
+    if(declined.length) state.submissions.unshift({icon:"🧾",store:currentRx.vendor,detail:`${declined.length} item(s) couldn't be verified`,when:"Just now",status:"declined",label:"Declined"});
+    renderSubs();
+  }
+  currentRx=null; verifyIdx=null; closeReceipt();
+};
 
 /* =================== BARCODE FLOW =================== */
 const barcodeScrim=$("barcodeScrim"), scanStart=$("scanStart"), scanStop=$("scanStop"),
       scanResult=$("scanResult"), manualUpc=$("manualUpc"), manualCheck=$("manualCheck");
 let qr=null;
 
-$("openBarcode").addEventListener("click",()=>{ scanResult.innerHTML=""; barcodeScrim.classList.add("open"); });
+const BARCODE_TITLE="Scan a product", BARCODE_SUB="Check a barcode against active offers. Decoding happens in your browser — only the UPC number is sent, never an image.";
+function resetBarcodeMode(){ verifyIdx=null; $("barcodeTitle").textContent=BARCODE_TITLE; $("barcodeSub").textContent=BARCODE_SUB; }
+$("openBarcode").addEventListener("click",()=>{ resetBarcodeMode(); scanResult.innerHTML=""; barcodeScrim.classList.add("open"); });
 $("closeBarcode").addEventListener("click",closeBarcode);
 barcodeScrim.addEventListener("click",e=>{ if(e.target===barcodeScrim) closeBarcode(); });
-async function closeBarcode(){ if(qr){ try{await qr.stop();}catch{} } resetScanButtons(); barcodeScrim.classList.remove("open"); }
+async function closeBarcode(){ if(qr){ try{await qr.stop();}catch{} } resetScanButtons(); resetBarcodeMode(); barcodeScrim.classList.remove("open"); }
 function resetScanButtons(){ scanStart.classList.remove("hidden"); scanStop.classList.add("hidden"); }
 
 function checkUpc(upc){
@@ -1191,7 +1241,7 @@ scanStart.addEventListener("click",async()=>{
     formatsToSupport:[Html5QrcodeSupportedFormats.UPC_A,Html5QrcodeSupportedFormats.UPC_E,Html5QrcodeSupportedFormats.EAN_13,Html5QrcodeSupportedFormats.EAN_8] };
   try{
     await qr.start({facingMode:"environment"},config,async(decoded)=>{
-      try{await qr.stop();}catch{} resetScanButtons(); checkUpc(decoded);
+      try{await qr.stop();}catch{} resetScanButtons(); if(verifyIdx!=null) verifyScan(decoded); else checkUpc(decoded);
     },()=>{});
   }catch(err){
     scanResult.innerHTML=`<div class="banner err">Camera error: ${esc(String(err))}<br><small>Camera needs http://localhost or HTTPS and permission.</small></div>`;
@@ -1199,7 +1249,7 @@ scanStart.addEventListener("click",async()=>{
   }
 });
 scanStop.addEventListener("click",async()=>{ if(qr){try{await qr.stop();}catch{}} resetScanButtons(); });
-manualCheck.addEventListener("click",()=>{ const v=manualUpc.value.trim(); if(v) checkUpc(v); });
+manualCheck.addEventListener("click",()=>{ const v=manualUpc.value.trim(); if(v){ if(verifyIdx!=null) verifyScan(v); else checkUpc(v); } });
 manualUpc.addEventListener("keydown",e=>{ if(e.key==="Enter") manualCheck.click(); });
 
 /* =================== DRILL-IN: OFFER & STORE DETAIL =================== */
