@@ -85,6 +85,13 @@ def upc_variants(code):
         variants.add(digits[1:])      # EAN-13 -> UPC-A
     if len(digits) == 12:
         variants.add("0" + digits)    # UPC-A -> EAN-13
+    # UPC-A/EAN "core" = manufacturer+product digits (drop the leading
+    # number-system/pad digit(s) and the trailing check digit) so a full
+    # 12/13/14-digit code reconciles with a 10-digit catalog code, and vice-versa.
+    if len(digits) >= 12:
+        variants.add(digits[-11:-1])
+    if len(digits) == 11:
+        variants.add(digits[:10])     # drop check digit only
     return variants
 
 
@@ -225,8 +232,9 @@ def _money_to_float(text):
         return None
 
 
-# Contiguous 12–14 digit run, or a UPC-A printed with the standard 1-5-5-1 spacing.
-_UPC_CONTIG = re.compile(r"(?<!\d)(\d{12,14})(?!\d)")
+# Contiguous 8–14 digit run, or a UPC-A printed with the standard 1-5-5-1 spacing.
+# 8 digits covers UPC-E/EAN-8 and short catalog codes; 14 covers GTIN-14.
+_UPC_CONTIG = re.compile(r"(?<!\d)(\d{8,14})(?!\d)")
 _UPC_SPACED = re.compile(r"(?<!\d)(\d[ ]?\d{5}[ ]?\d{5}[ ]?\d)(?!\d)")
 
 
@@ -241,7 +249,7 @@ def _attach_upc(row, row_text):
     m = _UPC_CONTIG.search(hay) or _UPC_SPACED.search(hay)
     if m:
         cand = re.sub(r"\D", "", m.group(1))
-        if 12 <= len(cand) <= 14:
+        if 8 <= len(cand) <= 14:
             row["upc"] = cand
             row["upc_source"] = "text"   # vs Textract PRODUCT_CODE; useful for debugging
 
@@ -287,7 +295,7 @@ def normalize_textract(resp):
                         row["quantity"] = value
                     elif ftype == "PRODUCT_CODE":
                         code = re.sub(r"\D", "", value or "")
-                        if 11 <= len(code) <= 14:   # ignore stray short "codes"
+                        if 8 <= len(code) <= 14:   # UPC-E/EAN-8 up through GTIN-14
                             row["upc"] = code
                     elif ftype == "EXPENSE_ROW":
                         row_text = value or ""
@@ -330,13 +338,33 @@ def _clean_line_items(items):
     for li in items:
         desc = (li.get("description") or "").strip()
         if not desc or "\n" in desc:          # multi-line => fragment, not a product
+            _harvest_orphan_upc(li, cleaned)
             continue
-        if not re.search(r"[A-Za-z]", desc):   # must contain letters
+        if not re.search(r"[A-Za-z]", desc):   # digits-only row => likely a bare UPC
+            _harvest_orphan_upc(li, cleaned)
             continue
         if _LINEITEM_NOISE.search(desc):        # summary / payment line
             continue
         cleaned.append(li)
     return cleaned
+
+
+def _harvest_orphan_upc(li, cleaned):
+    """A UPC printed on its own line lands as a separate digits-only / fragment
+    row that _clean_line_items would otherwise drop. Recover the code and attach
+    it to the most recent product row that still has no UPC."""
+    hay = (li.get("description") or "") + " " + (li.get("upc") or "")
+    m = _UPC_CONTIG.search(hay) or _UPC_SPACED.search(hay)
+    if not m:
+        return
+    cand = re.sub(r"\D", "", m.group(1))
+    if not 8 <= len(cand) <= 14:
+        return
+    for prev in reversed(cleaned):
+        if not prev.get("upc"):
+            prev["upc"] = cand
+            prev["upc_source"] = "orphan-line"
+            return
 
 
 def _reject(job, reason, result=None):

@@ -724,9 +724,16 @@ function switchTab(name){
 function money(v){ return "$"+Number(v||0).toFixed(2); }
 function esc(s){ return String(s==null?"":s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
 function upcVariants(code){
-  const d=String(code||"").replace(/\D/g,""); const v=new Set([d]);
-  if(d.length===13&&d.startsWith("0")) v.add(d.slice(1));
-  if(d.length===12) v.add("0"+d);
+  const d=String(code||"").replace(/\D/g,""); const v=new Set();
+  if(!d) return v;
+  v.add(d);
+  if(d.length===13&&d.startsWith("0")) v.add(d.slice(1));   // EAN-13 -> UPC-A
+  if(d.length===12) v.add("0"+d);                            // UPC-A -> EAN-13
+  // UPC-A/EAN "core" = manufacturer+product digits (drop the leading
+  // number-system/pad digit(s) and the trailing check digit). Lets a full
+  // 12/13-digit scan reconcile with a 10-digit catalog code and vice-versa.
+  if(d.length>=12) v.add(d.slice(d.length-11, d.length-1));
+  if(d.length===11) v.add(d.slice(0,10));                    // drop check digit only
   return v;
 }
 function fmtExp(d){
@@ -1175,7 +1182,9 @@ function verifyScan(upc){
     verifyIdx=null; closeBarcode(); renderRxResult();
     toast(`${money(it.cashback)} verified & added 🎉`);
   }else{
-    scanResult.innerHTML=`<div class="banner err">That barcode isn't ${esc(it.offer.product)}. Scan the correct product to claim, or close to skip.</div>`;
+    const exp=[it.offer.upc].concat((it.offer.sizes||[]).map(s=>s.upc)).filter(Boolean).join(", ");
+    scanResult.innerHTML=`<div class="banner err">That barcode isn't ${esc(it.offer.product)}. Scan the correct product to claim, or close to skip.</div>
+      <div class="muted small" style="margin-top:6px">Scanned <code>${esc(String(upc).replace(/\\D/g,""))}</code> · expected <code>${esc(exp)}</code></div>`;
   }
 }
 
