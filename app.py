@@ -225,6 +225,27 @@ def _money_to_float(text):
         return None
 
 
+# Contiguous 12–14 digit run, or a UPC-A printed with the standard 1-5-5-1 spacing.
+_UPC_CONTIG = re.compile(r"(?<!\d)(\d{12,14})(?!\d)")
+_UPC_SPACED = re.compile(r"(?<!\d)(\d[ ]?\d{5}[ ]?\d{5}[ ]?\d)(?!\d)")
+
+
+def _attach_upc(row, row_text):
+    """Recover a UPC/GTIN for a line item when Textract didn't populate
+    PRODUCT_CODE. Many receipts print the UPC in the item text, which Textract
+    files under ITEM/EXPENSE_ROW rather than PRODUCT_CODE — so scan that text for
+    a 12–14 digit number (or a standard-spaced UPC-A) and use it for matching."""
+    if row.get("upc"):
+        return
+    hay = (row.get("description") or "") + " " + (row_text or "")
+    m = _UPC_CONTIG.search(hay) or _UPC_SPACED.search(hay)
+    if m:
+        cand = re.sub(r"\D", "", m.group(1))
+        if 12 <= len(cand) <= 14:
+            row["upc"] = cand
+            row["upc_source"] = "text"   # vs Textract PRODUCT_CODE; useful for debugging
+
+
 def normalize_textract(resp):
     """Map a Textract AnalyzeExpense response into the same shape the front-end
     already understands for Veryfi: {vendor:{name}, date, total, line_items[]}.
@@ -251,6 +272,7 @@ def normalize_textract(resp):
         for group in doc.get("LineItemGroups") or []:
             for item in group.get("LineItems") or []:
                 row = {}
+                row_text = ""   # Textract's full row text (EXPENSE_ROW) — best place to find a UPC
                 for ef in item.get("LineItemExpenseFields") or []:
                     ftype = (ef.get("Type") or {}).get("Text")
                     value = (ef.get("ValueDetection") or {}).get("Text")
@@ -264,8 +286,13 @@ def normalize_textract(resp):
                     elif ftype == "QUANTITY":
                         row["quantity"] = value
                     elif ftype == "PRODUCT_CODE":
-                        row["upc"] = re.sub(r"\D", "", value or "")
+                        code = re.sub(r"\D", "", value or "")
+                        if 11 <= len(code) <= 14:   # ignore stray short "codes"
+                            row["upc"] = code
+                    elif ftype == "EXPENSE_ROW":
+                        row_text = value or ""
                 if row:
+                    _attach_upc(row, row_text)
                     line_items.append(row)
 
     line_items = _clean_line_items(line_items)
