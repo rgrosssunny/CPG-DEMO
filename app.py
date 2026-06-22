@@ -470,6 +470,15 @@ def noclip_preview():
     return resp
 
 
+@app.route("/cashback")
+@app.route("/cashback.html")
+def cashback_page():
+    """Standalone, linked-out cashback experience (separate responsive page)."""
+    resp = send_from_directory(APP_DIR, "cashback.html")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.route("/aws/status")
 def aws_status():
     """Report whether boto3 + AWS credentials are available so the UI can warn."""
