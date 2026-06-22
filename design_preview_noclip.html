@@ -456,7 +456,7 @@
       </div>
 
       <div class="section-label">Cash back</div>
-      <a class="card pad" href="cashback.html" style="display:flex;gap:14px;align-items:center;text-decoration:none;color:inherit;border:1px solid var(--line-soft)">
+      <a class="card pad" id="cashbackSiteCard" href="cashback.html" style="display:flex;gap:14px;align-items:center;text-decoration:none;color:inherit;border:1px solid var(--line-soft)">
         <div style="width:46px;height:46px;flex:none;border-radius:12px;display:grid;place-items:center;font-size:24px;background:var(--brand-2);color:#fff">🧾</div>
         <div style="flex:1">
           <div style="font-weight:800;display:flex;align-items:center;gap:8px;flex-wrap:wrap">Cash Back
@@ -833,9 +833,21 @@ function renderCart(){
 /* ---------- Shop disclosure modal (powered by Sunny Benefits, not the plan) ---------- */
 let shopDisclosureShown=false;
 const disclosureScrim=$("disclosureScrim");
-function maybeShowDisclosure(){ if(!shopDisclosureShown){ shopDisclosureShown=true; disclosureScrim.classList.add("open"); } }
-$("disclosureOk").addEventListener("click",()=>disclosureScrim.classList.remove("open"));
-disclosureScrim.addEventListener("click",e=>{ if(e.target===disclosureScrim) disclosureScrim.classList.remove("open"); });
+const DISCLOSURE_DEFAULT="Got it — show me the offers";
+let pendingNav=null;   // set when the disclosure is gating a link-out to the Cash Back site
+function maybeShowDisclosure(){ if(!shopDisclosureShown){ shopDisclosureShown=true; $("disclosureOk").textContent=DISCLOSURE_DEFAULT; disclosureScrim.classList.add("open"); } }
+// Link-out card: show the plan-disassociation disclosure first, then navigate.
+$("cashbackSiteCard").addEventListener("click",e=>{
+  e.preventDefault();
+  pendingNav=$("cashbackSiteCard").getAttribute("href");
+  $("disclosureOk").textContent="Got it — continue to Cash Back ›";
+  disclosureScrim.classList.add("open");
+});
+$("disclosureOk").addEventListener("click",()=>{
+  disclosureScrim.classList.remove("open");
+  if(pendingNav){ const dest=pendingNav; pendingNav=null; window.location.href=dest; }
+});
+disclosureScrim.addEventListener("click",e=>{ if(e.target===disclosureScrim){ pendingNav=null; $("disclosureOk").textContent=DISCLOSURE_DEFAULT; disclosureScrim.classList.remove("open"); } });
 
 $("fabReceipt").addEventListener("click",openReceipt);
 function renderStores(){
