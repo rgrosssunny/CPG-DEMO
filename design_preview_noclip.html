@@ -335,6 +335,14 @@
     height:calc(100vh - 48px);min-height:calc(100vh - 48px);max-height:calc(100vh - 48px);
     height:calc(100dvh - 48px);min-height:calc(100dvh - 48px);max-height:calc(100dvh - 48px)}
 }
+/* Standalone "Cash Back site" mode (reached via the disclosure-gated link-out):
+   hide the app tabs + other panels and rebrand the bar, so the full cashback
+   module renders as its own separate page. */
+body.cashback-only .seg-tabs{display:none}
+body.cashback-only #tab-overview,body.cashback-only #tab-earn{display:none!important}
+body.cashback-only .appbar{background:var(--brand-2)}
+body.cashback-only .appbar .brand{color:#fff}
+body.cashback-only .appbar .iconbtn{color:#fff}
 </style>
 
 <script>
@@ -456,7 +464,7 @@
       </div>
 
       <div class="section-label">Cash back</div>
-      <a class="card pad" id="cashbackSiteCard" href="cashback.html" style="display:flex;gap:14px;align-items:center;text-decoration:none;color:inherit;border:1px solid var(--line-soft)">
+      <a class="card pad" id="cashbackSiteCard" href="design_preview_noclip.html?view=cashback" style="display:flex;gap:14px;align-items:center;text-decoration:none;color:inherit;border:1px solid var(--line-soft)">
         <div style="width:46px;height:46px;flex:none;border-radius:12px;display:grid;place-items:center;font-size:24px;background:var(--brand-2);color:#fff">🧾</div>
         <div style="flex:1">
           <div style="font-weight:800;display:flex;align-items:center;gap:8px;flex-wrap:wrap">Cash Back
@@ -1146,11 +1154,15 @@ barcodeScrim.addEventListener("click",e=>{ if(e.target===barcodeScrim) closeBarc
 async function closeBarcode(){ if(qr){ try{await qr.stop();}catch{} } resetScanButtons(); barcodeScrim.classList.remove("open"); }
 function resetScanButtons(){ scanStart.classList.remove("hidden"); scanStop.classList.add("hidden"); }
 
-async function checkUpc(upc){
-  scanResult.innerHTML=`<div class="center-load"><span class="spinner dark"></span>Checking ${esc(upc)}…</div>`;
-  try{
-    const r=await fetch("/api/check-offer?upc="+encodeURIComponent(upc));
-    const d=await r.json();
+function checkUpc(upc){
+  const scanned=String(upc).replace(/\D/g,"");
+  const w=upcVariants(scanned);
+  let d={eligible:false,scanned_upc:scanned};
+  for(const o of state.offers){
+    const codes=[{upc:o.upc,cashback:o.cashback,size:null}].concat(o.sizes||[]);
+    const m=codes.find(c=>[...upcVariants(c.upc)].some(x=>w.has(x)));
+    if(m){ d=Object.assign({eligible:true,scanned_upc:scanned},o); if(m.size){ d.matched_size=m.size; d.cashback=m.cashback; } break; }
+  }
     if(d.eligible){
       const ex = d.status==="exhausted";
       scanResult.innerHTML=`
@@ -1168,7 +1180,6 @@ async function checkUpc(upc){
           <div class="rd">No cashback offer for UPC ${esc(d.scanned_upc||upc)}.</div></div>
         <div class="banner info">Browse the featured offers to see what's eligible right now.</div>`;
     }
-  }catch(err){ scanResult.innerHTML=`<div class="banner err">Lookup failed: ${esc(String(err))}</div>`; }
 }
 window.fromBarcodeToReceipt=()=>{ closeBarcode().then(()=>openReceipt()); };
 
@@ -1268,4 +1279,20 @@ function openStore(id){
   });
   $("stClose").addEventListener("click",()=>storeScrim.classList.remove("open"));
 }
+
+/* ===== Standalone "Cash Back site" mode =====================================
+   When reached via ?view=cashback (the disclosure-gated link-out), render only
+   the cashback module as its own page: hide the tabs + other panels, rebrand the
+   app bar with a Back link + "Cash Back", and skip the (already-shown) disclosure. */
+(function(){
+  if(!/[?&]view=cashback\b/.test(location.search)) return;
+  document.body.classList.add("cashback-only");
+  shopDisclosureShown=true;                       // disclosure already acknowledged before navigating
+  const bar=document.querySelector(".appbar");
+  if(bar) bar.innerHTML=
+    '<a class="iconbtn" href="design_preview_noclip.html" aria-label="Back to app" style="text-decoration:none;font-size:24px;font-weight:800">&#8249;</a>'
+    +'<div class="brand"><span class="spark">&#10022;</span> Cash Back</div>'
+    +'<span style="width:40px;height:40px"></span>';
+  switchTab("shop");
+})();
 </script>
