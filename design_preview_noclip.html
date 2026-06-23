@@ -23,6 +23,18 @@
     --shadow-pop:0 10px 30px rgba(20,20,23,.12),0 2px 8px rgba(20,20,23,.08);
     --ease:cubic-bezier(.22,1,.36,1); --dur:220ms;
   }
+  /* ===== SunnyCash skin — applies ONLY to the standalone Cash Back site (?view=cashback).
+     Remaps the brand tokens so the external page reads as a consumer cash-back brand,
+     warm gold + coral, distinct from ABC Health. The ABC app/Shop tab are unaffected. */
+  body.cashback-only{
+    --brand:#E8A317;            /* warm gold accent (was teal) */
+    --brand-2:#3A2412;          /* warm espresso anchor — white text stays high-contrast */
+    --action:#C0371C;           /* coral primary CTA (white text ≥4.5:1) */
+    --action-hover:#9E2C13;
+    --info-bg:#FFF4D6;          /* cream chips; espresso text reads AAA on it */
+  }
+  body.cashback-only .feat .tile{ color:#231B07 }   /* dark text on gold tile (not white) */
+  body.cashback-only .feat-banner{ background:linear-gradient(135deg,var(--brand-2),var(--brand)) }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;height:100%}
   body{
@@ -1359,7 +1371,7 @@ function openStore(id){
   const bar=document.querySelector(".appbar");
   if(bar) bar.innerHTML=
     '<a class="iconbtn" href="design_preview_noclip.html" aria-label="Back to app" style="text-decoration:none;font-size:24px;font-weight:800">&#8249;</a>'
-    +'<div class="brand"><span class="spark">&#10022;</span> Cash Back</div>'
+    +'<div class="brand"><span class="spark">&#10022;</span> SunnyCash</div>'
     +'<span style="width:40px;height:40px"></span>';
   switchTab("shop");
 })();
