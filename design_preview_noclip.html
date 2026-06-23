@@ -605,20 +605,23 @@ body.cashback-only .appbar .iconbtn{color:#fff}
 
     <div id="rcStep1">
       <div id="configWarn" class="banner warn hidden">Veryfi credentials aren't set yet. Add them to <code>.env</code> and restart the server to use live OCR.</div>
-      <div class="drop" id="drop">
+      <div id="awsWarn" class="banner warn hidden"></div>
+
+      <button id="useCamera" class="btn btn-brand btn-block">📸 Capture receipt with camera</button>
+      <div id="camOrDivider" style="display:flex;align-items:center;gap:10px;margin:14px 2px;color:var(--ink-400);font-size:12px">
+        <span style="flex:1;height:1px;background:var(--line-soft)"></span>OR<span style="flex:1;height:1px;background:var(--line-soft)"></span>
+      </div>
+      <button id="uploadToggle" class="btn btn-ghost btn-block">📤 Upload a receipt</button>
+
+      <div class="drop hidden" id="drop" style="margin-top:12px">
         <div class="big">📤</div>
         <strong>Upload a receipt</strong><br>
         <span class="small">Choose an image · JPG, PNG or HEIC · up to 20 MB</span>
       </div>
       <input id="file" type="file" accept="image/*" class="hidden" />
       <div class="preview" id="preview"></div>
-      <button id="submitReceipt" class="btn btn-primary btn-block" style="margin-top:16px" disabled>Submit receipt</button>
+      <button id="submitReceipt" class="btn btn-primary btn-block hidden" style="margin-top:16px" disabled>Submit receipt</button>
 
-      <div id="camOrDivider" style="display:flex;align-items:center;gap:10px;margin:16px 2px 12px;color:var(--ink-400);font-size:12px">
-        <span style="flex:1;height:1px;background:var(--line-soft)"></span>OR<span style="flex:1;height:1px;background:var(--line-soft)"></span>
-      </div>
-      <div id="awsWarn" class="banner warn hidden"></div>
-      <button id="useCamera" class="btn btn-brand btn-block">📸 Capture receipt with camera</button>
       <button id="closeReceipt" class="btn btn-ghost btn-block" style="margin-top:10px">Cancel</button>
     </div>
 
@@ -928,18 +931,21 @@ receiptScrim.addEventListener("click",e=>{ if(e.target===receiptScrim) closeRece
 
 function resetReceipt(){
   chosenFile=null; fileInput.value=""; preview.innerHTML="";
-  submitBtn.disabled=true; $("rcStep1").classList.remove("hidden");
+  submitBtn.disabled=true; submitBtn.classList.add("hidden");
+  drop.classList.add("hidden");
+  $("rcStep1").classList.remove("hidden");
   $("rcResult").classList.add("hidden"); $("rcResult").innerHTML="";
   submitBtn.textContent="Submit receipt";
   stopCamera();
 }
+$("uploadToggle").addEventListener("click",()=>{ drop.classList.remove("hidden"); fileInput.click(); });
 drop.addEventListener("click",()=>fileInput.click());
 ["dragover","dragenter"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add("drag");}));
 ["dragleave","drop"].forEach(e=>drop.addEventListener(e,()=>drop.classList.remove("drag")));
 drop.addEventListener("drop",ev=>{ ev.preventDefault(); if(ev.dataTransfer.files.length) handleFile(ev.dataTransfer.files[0]); });
 fileInput.addEventListener("change",()=>{ if(fileInput.files.length) handleFile(fileInput.files[0]); });
 function handleFile(f){
-  chosenFile=f; submitBtn.disabled=false;
+  chosenFile=f; submitBtn.disabled=false; submitBtn.classList.remove("hidden"); drop.classList.remove("hidden");
   if(f.type.startsWith("image/")){ preview.innerHTML=`<img src="${URL.createObjectURL(f)}" alt="receipt preview"/>`; }
   else{ preview.innerHTML=`<p class="muted small">Selected: ${esc(f.name)}</p>`; }
 }
