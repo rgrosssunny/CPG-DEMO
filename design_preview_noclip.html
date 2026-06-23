@@ -927,9 +927,9 @@ function renderSubs(){
 
 /* ---------- load offers from backend (real catalog) ---------- */
 fetch("/api/offers").then(r=>r.json()).then(list=>{
-  state.offers = (Array.isArray(list)&&list.length)?list:FALLBACK_OFFERS;
+  state.offers = ((Array.isArray(list)&&list.length)?list:FALLBACK_OFFERS).map(o=>({...o,status:"active"}));
   renderOffers(); renderFeatured(); renderFilters(); renderStores();
-}).catch(()=>{ state.offers=FALLBACK_OFFERS; renderOffers(); renderFeatured(); renderFilters(); renderStores(); });
+}).catch(()=>{ state.offers=FALLBACK_OFFERS.map(o=>({...o,status:"active"})); renderOffers(); renderFeatured(); renderFilters(); renderStores(); });
 
 fetch("/api/config-status").then(r=>r.json()).then(d=>{
   if(!d.configured) $("configWarn").classList.remove("hidden");
@@ -1262,7 +1262,7 @@ function checkUpc(upc){
     if(m){ d=Object.assign({eligible:true,scanned_upc:scanned},o); if(m.size){ d.matched_size=m.size; d.cashback=m.cashback; } break; }
   }
     if(d.eligible){
-      const ex = d.status==="exhausted";
+      const ex = false;
       scanResult.innerHTML=`
         <div class="result-hero" style="padding-top:8px"><div class="rj">${ex?"⌛":"✅"}</div>
           <div class="rt">${ex?"Offer fully claimed":money(d.cashback)+" cash back"}</div>
