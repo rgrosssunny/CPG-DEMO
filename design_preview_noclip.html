@@ -27,14 +27,18 @@
      Remaps the brand tokens so the external page reads as a consumer cash-back brand,
      warm gold + coral, distinct from ABC Health. The ABC app/Shop tab are unaffected. */
   body.cashback-only{
-    --brand:#E8A317;            /* warm gold accent (was teal) */
+    --brand:#FFCE2B;            /* bright SunnyCash yellow accent */
     --brand-2:#3A2412;          /* warm espresso anchor — white text stays high-contrast */
     --action:#C0371C;           /* coral primary CTA (white text ≥4.5:1) */
     --action-hover:#9E2C13;
     --info-bg:#FFF4D6;          /* cream chips; espresso text reads AAA on it */
   }
-  body.cashback-only .feat .tile{ color:#231B07 }   /* dark text on gold tile (not white) */
-  body.cashback-only .feat-banner{ background:linear-gradient(135deg,var(--brand-2),var(--brand)) }
+  body.cashback-only .appbar{ background:#FFCE2B; border-bottom:1px solid #E3B100 }  /* bright yellow brand bar */
+  body.cashback-only .appbar .brand{ color:#231B07 }
+  body.cashback-only .appbar .spark{ color:#C0371C }    /* coral sparkle stays visible on yellow */
+  body.cashback-only .appbar .iconbtn{ color:#231B07 }
+  body.cashback-only .feat .tile{ color:#231B07 }       /* dark text on yellow tile (not white) */
+  body.cashback-only .feat-banner{ background:var(--brand-2) }  /* solid espresso so white text stays readable */
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;height:100%}
   body{
