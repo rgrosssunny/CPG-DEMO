@@ -1357,7 +1357,7 @@ function openStore(id){
   const rowsHtml=carried.length?carried.map(o=>{
     const ex=o.status==="exhausted";
     return `<div class="store" data-cmp="${esc(o.campaign_id)}" style="${ex?"opacity:.6":""}">
-      <div class="si" style="width:40px;height:40px;border-radius:10px;display:grid;place-items:center;font-size:20px;background:#fff;border:1px solid var(--line-faint);overflow:hidden">${o.image?`<img src="${esc(o.image)}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:contain;padding:5px">`:(o.icon||"🛒")}</div>
+      <div class="si" style="width:40px;height:40px;border-radius:10px;display:grid;place-items:center;font-size:20px;background:#fff;border:1px solid var(--line-faint);overflow:hidden">${o.image?`<img src="${esc(o.image)}" alt="" style="width:100%;height:100%;object-fit:contain;padding:5px">`:(o.icon||"🛒")}</div>
       <div class="b"><div class="n">${o.brand?esc(o.brand)+" — ":""}${esc(o.product)}</div><div class="m">${ex?"Fully claimed":cbDisplay(o)}</div></div>
       <span class="chev">›</span></div>`;
   }).join(""):`<div class="center-load">No offers at this store yet.</div>`;
