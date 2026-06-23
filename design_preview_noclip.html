@@ -583,6 +583,7 @@ body.cashback-only .appbar .iconbtn{color:#fff}
     <p>These cash back offers are provided by <b>Sunny Benefits</b> and are funded by participating consumer-brand partners.</p>
     <p><b>They are not a benefit of your health plan.</b> Your plan does not sponsor, endorse, fund, or administer these rewards and is not responsible for them in any way.</p>
     <div class="m-note">Cash back is paid to your Sunny Rewards card, separate from any plan benefit. Reward earnings may be taxable and are your responsibility to report. Offers are subject to availability and may change or end at any time.</div>
+    <div class="m-note" id="discThirdParty" style="display:none">You're about to leave this app and continue to the Cash Back site — a separate, third-party website operated by Sunny Benefits, not your health plan.</div>
     <button class="btn btn-primary btn-block" id="disclosureOk">Got it — show me the offers</button>
   </div>
 </div>
@@ -856,19 +857,21 @@ let shopDisclosureShown=false;
 const disclosureScrim=$("disclosureScrim");
 const DISCLOSURE_DEFAULT="Got it — show me the offers";
 let pendingNav=null;   // set when the disclosure is gating a link-out to the Cash Back site
-function maybeShowDisclosure(){ if(!shopDisclosureShown){ shopDisclosureShown=true; $("disclosureOk").textContent=DISCLOSURE_DEFAULT; disclosureScrim.classList.add("open"); } }
-// Link-out card: show the plan-disassociation disclosure first, then navigate.
+function maybeShowDisclosure(){ if(!shopDisclosureShown){ shopDisclosureShown=true; $("disclosureOk").textContent=DISCLOSURE_DEFAULT; $("discThirdParty").style.display="none"; disclosureScrim.classList.add("open"); } }
+// Link-out card: show the plan-disassociation disclosure (incl. third-party site notice) first, then navigate.
 $("cashbackSiteCard").addEventListener("click",e=>{
   e.preventDefault();
   pendingNav=$("cashbackSiteCard").getAttribute("href");
+  $("discThirdParty").style.display="block";
   $("disclosureOk").textContent="Got it — continue to Cash Back ›";
   disclosureScrim.classList.add("open");
 });
 $("disclosureOk").addEventListener("click",()=>{
   disclosureScrim.classList.remove("open");
+  $("discThirdParty").style.display="none";
   if(pendingNav){ const dest=pendingNav; pendingNav=null; window.location.href=dest; }
 });
-disclosureScrim.addEventListener("click",e=>{ if(e.target===disclosureScrim){ pendingNav=null; $("disclosureOk").textContent=DISCLOSURE_DEFAULT; disclosureScrim.classList.remove("open"); } });
+disclosureScrim.addEventListener("click",e=>{ if(e.target===disclosureScrim){ pendingNav=null; $("disclosureOk").textContent=DISCLOSURE_DEFAULT; $("discThirdParty").style.display="none"; disclosureScrim.classList.remove("open"); } });
 
 $("fabReceipt").addEventListener("click",openReceipt);
 function renderStores(){
