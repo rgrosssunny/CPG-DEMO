@@ -23,36 +23,6 @@
     --shadow-pop:0 10px 30px rgba(20,20,23,.12),0 2px 8px rgba(20,20,23,.08);
     --ease:cubic-bezier(.22,1,.36,1); --dur:220ms;
   }
-  /* ===== SunnyCash skin — applies ONLY to the standalone Cash Back site (?view=cashback).
-     Remaps the brand tokens so the external page reads as a consumer cash-back brand,
-     warm gold + coral, distinct from ABC Health. The ABC app/Shop tab are unaffected. */
-  body.cashback-only{
-    --brand:#FF2E88;            /* hot magenta accent */
-    --brand-2:#3A0B6B;          /* deep violet anchor (white text/icons stay crisp) */
-    --action:#D6286F;           /* magenta CTA — white text ≥4.5:1 */
-    --action-hover:#B61E5C;
-    --info-bg:#F0E3FF;          /* lavender chips */
-  }
-  /* Violet canvas, white content cards, magenta accents. */
-  body.cashback-only .device{ background:#5B17D6 }
-  body.cashback-only .appbar{ background:#5B17D6; border-bottom:1px solid #4A12B5 }
-  body.cashback-only .appbar .brand{ color:#fff }
-  body.cashback-only .appbar .spark{ color:#fff }
-  body.cashback-only .appbar .iconbtn{ color:#fff }
-  /* On-canvas text must be light on violet (white cards keep their own dark text). */
-  body.cashback-only #tab-shop > h1.page,
-  body.cashback-only #tab-shop > .section-label{ color:#fff }
-  body.cashback-only #tab-shop > p.muted{ color:#EADBFF }
-  body.cashback-only #tab-shop > .footer-legal{ color:#CDB6FF }
-  body.cashback-only #tab-shop > .section-label a{ color:#FFD9F0 !important }
-  /* Dark hero panels become white cards on the violet canvas. */
-  body.cashback-only .cashback-strip{ background:#fff; color:#231B07; box-shadow:var(--shadow-card) }
-  body.cashback-only .feat-banner{ background:#fff; color:#231B07 }
-  body.cashback-only .feat-banner .fb-cb{ background:var(--info-bg) }
-  body.cashback-only .feat .tile{ color:#231B07 }
-  /* Deep-violet glyph squares, magenta receipt FAB. */
-  body.cashback-only .action-tile .glyph{ background:var(--brand-2) }
-  body.cashback-only .fab-receipt{ background:var(--action) }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;height:100%}
   body{
@@ -1390,7 +1360,7 @@ function openStore(id){
   const bar=document.querySelector(".appbar");
   if(bar) bar.innerHTML=
     '<a class="iconbtn" href="design_preview_noclip.html" aria-label="Back to app" style="text-decoration:none;font-size:24px;font-weight:800">&#8249;</a>'
-    +'<div class="brand"><span class="spark">&#10022;</span> SunnyCash</div>'
+    +'<div class="brand"><span class="spark">&#10022;</span> Cash Back</div>'
     +'<span style="width:40px;height:40px"></span>';
   switchTab("shop");
 })();
