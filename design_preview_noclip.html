@@ -540,7 +540,7 @@ body.cashback-only .appbar .iconbtn{color:#fff}
         </div>
         <div class="action-tile" id="openBarcode">
           <div class="glyph"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5v14M7 5v14M11 5v14M15 5v14M19 5v14M21 5v14"/></svg></div>
-          <div class="at-t">Scan a product</div>
+          <div class="at-t">Check a product</div>
           <div class="at-d">Check a barcode</div>
         </div>
       </div>
@@ -630,7 +630,7 @@ body.cashback-only .appbar .iconbtn{color:#fff}
 <div class="scrim" id="barcodeScrim">
   <div class="sheet" id="barcodeSheet">
     <div class="grip"></div>
-    <h2 id="barcodeTitle">Scan a product</h2>
+    <h2 id="barcodeTitle">Check a product</h2>
     <p class="sub-h" id="barcodeSub">Check a barcode against active offers. Decoding happens in your browser — only the UPC number is sent, never an image.</p>
     <div id="reader" style="border-radius:var(--r-md);overflow:hidden"></div>
     <div style="display:flex;gap:10px;margin-top:12px">
@@ -1222,7 +1222,7 @@ const barcodeScrim=$("barcodeScrim"), scanStart=$("scanStart"), scanStop=$("scan
       scanResult=$("scanResult"), manualUpc=$("manualUpc"), manualCheck=$("manualCheck");
 let qr=null;
 
-const BARCODE_TITLE="Scan a product", BARCODE_SUB="Check a barcode against active offers. Decoding happens in your browser — only the UPC number is sent, never an image.";
+const BARCODE_TITLE="Check a product", BARCODE_SUB="Check a barcode against active offers. Decoding happens in your browser — only the UPC number is sent, never an image.";
 function resetBarcodeMode(){ verifyIdx=null; $("barcodeTitle").textContent=BARCODE_TITLE; $("barcodeSub").textContent=BARCODE_SUB; }
 $("openBarcode").addEventListener("click",()=>{ resetBarcodeMode(); scanResult.innerHTML=""; barcodeScrim.classList.add("open"); });
 $("closeBarcode").addEventListener("click",closeBarcode);
