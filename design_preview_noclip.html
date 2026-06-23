@@ -799,7 +799,7 @@ function renderOffers(){
     const ex = o.status==="exhausted";
     return `<div class="offer ${ex?"exhausted":"clickable"}" data-cmp="${esc(o.campaign_id)}">
       ${ex?`<span class="ribbon">Fully claimed</span>`:""}
-      <div class="ic">${o.image?`<img src="${esc(o.image)}" alt="${esc(o.product||"")}" loading="lazy">`:(o.icon||"🛒")}</div>
+      <div class="ic">${o.image?`<img src="${esc(o.image)}" alt="${esc(o.product||"")}">`:(o.icon||"🛒")}</div>
       <div class="brand-n">${esc(o.brand||"")}</div>
       <div class="prod">${esc(o.product||"")}</div>
       <div class="cb">${ex?money(o.cashback)+" back":cbDisplay(o)}</div>
@@ -816,7 +816,7 @@ function renderFeatured(){
   if(!active.length){ el.innerHTML=""; return; }
   const o=active.slice().sort((a,b)=>offerMaxCash(b)-offerMaxCash(a))[0];   // highest-value active offer
   el.innerHTML=`<div class="feat-banner clickable" data-cmp="${esc(o.campaign_id)}">
-    <div class="fb-ic">${o.image?`<img src="${esc(o.image)}" alt="" loading="lazy">`:(o.icon||"🛒")}</div>
+    <div class="fb-ic">${o.image?`<img src="${esc(o.image)}" alt="">`:(o.icon||"🛒")}</div>
     <div class="fb-body">
       <div class="fb-tag">★ Featured reward</div>
       <div class="fb-name">${esc(o.product||"")}</div>
