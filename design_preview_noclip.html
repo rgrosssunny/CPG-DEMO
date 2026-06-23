@@ -446,6 +446,10 @@ body.cashback-only .appbar .iconbtn{color:#fff}
           <div><div class="title">Over-the-counter</div><div class="sub">$75/yr max rewards</div></div>
           <div style="display:flex;align-items:center"><span class="amt"><sup>$</sup>75.00</span><span class="chev">›</span></div>
         </div>
+        <div class="reward-row" data-goto="shop">
+          <div><div class="title">Cash back</div><div class="sub">Brand-funded · separate from plan</div></div>
+          <div style="display:flex;align-items:center"><span class="amt"><sup>$</sup><span id="cbPurse">0.00</span></span><span class="chev">›</span></div>
+        </div>
       </div>
 
       <div style="height:14px"></div>
@@ -751,6 +755,7 @@ function renderStrip(){
   $("cbEarned").textContent = money(state.cashbackEarned);
   $("cbPending").textContent = money(state.cashbackPending);
   $("balance").textContent = state.balance.toFixed(2);
+  const cbp=$("cbPurse"); if(cbp) cbp.textContent = state.cashbackEarned.toFixed(2);
 }
 function cbDisplay(o){
   const amts=(o.sizes&&o.sizes.length?o.sizes.map(s=>Number(s.cashback)):[Number(o.cashback)]);
