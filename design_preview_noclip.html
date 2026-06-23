@@ -27,18 +27,26 @@
      Remaps the brand tokens so the external page reads as a consumer cash-back brand,
      warm gold + coral, distinct from ABC Health. The ABC app/Shop tab are unaffected. */
   body.cashback-only{
-    --brand:#FFCE2B;            /* bright SunnyCash yellow accent */
-    --brand-2:#3A2412;          /* warm espresso anchor — white text stays high-contrast */
+    --brand:#FFCE2B;            /* bright SunnyCash yellow */
+    --brand-2:#3A2412;          /* warm espresso — kept only for tiny dark accents */
     --action:#C0371C;           /* coral primary CTA (white text ≥4.5:1) */
     --action-hover:#9E2C13;
-    --info-bg:#FFF4D6;          /* cream chips; espresso text reads AAA on it */
+    --info-bg:#FFF4D6;
   }
-  body.cashback-only .appbar{ background:#FFCE2B; border-bottom:1px solid #E3B100 }  /* bright yellow brand bar */
+  /* Bright-yellow canvas with white content cards — consumer cash-back look. */
+  body.cashback-only .device{ background:#FFCE2B }
+  body.cashback-only .appbar{ background:#FFCE2B; border-bottom:1px solid #E9BE1A }
   body.cashback-only .appbar .brand{ color:#231B07 }
-  body.cashback-only .appbar .spark{ color:#C0371C }    /* coral sparkle stays visible on yellow */
+  body.cashback-only .appbar .spark{ color:#C0371C }
   body.cashback-only .appbar .iconbtn{ color:#231B07 }
-  body.cashback-only .feat .tile{ color:#231B07 }       /* dark text on yellow tile (not white) */
-  body.cashback-only .feat-banner{ background:var(--brand-2) }  /* solid espresso so white text stays readable */
+  /* Recolor the dark espresso hero panels into white cards on the yellow canvas. */
+  body.cashback-only .cashback-strip{ background:#fff; color:#231B07; box-shadow:var(--shadow-card) }
+  body.cashback-only .feat-banner{ background:#fff; color:#231B07 }
+  body.cashback-only .feat-banner .fb-cb{ background:var(--cream-warm) }
+  body.cashback-only .feat .tile{ color:#231B07 }
+  /* Coral accents instead of espresso for the small glyphs + receipt FAB. */
+  body.cashback-only .action-tile .glyph{ background:var(--action) }
+  body.cashback-only .fab-receipt{ background:var(--action) }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;height:100%}
   body{
