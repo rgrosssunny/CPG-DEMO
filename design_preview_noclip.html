@@ -1313,17 +1313,15 @@ function openOffer(cmp){
     <div class="detail-label">Where to buy</div>
     <div style="margin:0 2px">${storesHtml}</div>
     ${ex?"":`
-    <button class="btn btn-primary btn-block" style="margin-top:18px" id="odReceipt">Snap a receipt to earn</button>
-    <button class="btn btn-ghost btn-block" style="margin-top:10px" id="odBarcode">Scan this product</button>`}
+    <button class="btn btn-primary btn-block" style="margin-top:18px" id="odReceipt">Snap a receipt to earn</button>`}
     <button class="btn ${ex?"btn-primary":"btn-ghost"} btn-block" style="margin-top:10px" id="odClose">Close</button>`;
 
   offerScrim.classList.add("open");
   $("offerDetail").querySelectorAll(".mini-store[data-store]").forEach(el=>{
     el.addEventListener("click",()=>{ offerScrim.classList.remove("open"); openStore(el.dataset.store); });
   });
-  const r=$("odReceipt"), b=$("odBarcode");
+  const r=$("odReceipt");
   if(r) r.addEventListener("click",()=>{ offerScrim.classList.remove("open"); openReceipt(); });
-  if(b) b.addEventListener("click",()=>{ offerScrim.classList.remove("open"); $("openBarcode").click(); });
   $("odClose").addEventListener("click",()=>offerScrim.classList.remove("open"));
 }
 
