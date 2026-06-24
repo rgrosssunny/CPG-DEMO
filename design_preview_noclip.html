@@ -281,6 +281,25 @@
   .matched-item{ display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line-faint);font-size:14px }
   .matched-item .mc{ font-weight:800;color:var(--success) }
 
+  /* receipt result tray */
+  .rx-hero{ text-align:center;padding:18px 14px 16px;background:#F1FBF4;border:1px solid #C9EDD5;border-radius:var(--r-lg);margin:4px 0 8px }
+  .rx-hero.verify{ background:var(--info-bg);border-color:#BBD8F0 }
+  .rx-hero .rx-badge{ width:52px;height:52px;border-radius:var(--r-pill);background:var(--success);color:#fff;display:grid;place-items:center;font-size:26px;margin:0 auto 10px }
+  .rx-hero.verify .rx-badge{ background:var(--brand-2) }
+  .rx-hero .rx-amt{ font-size:40px;font-weight:800;color:var(--success);line-height:1;letter-spacing:-.02em }
+  .rx-hero .rx-lab{ font-size:14px;font-weight:700;color:var(--ink-900);margin-top:8px }
+  .rx-hero .rx-sub{ font-size:12.5px;color:var(--ink-500);margin-top:4px }
+  .rx-deals-h{ font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-400);margin:14px 2px 8px }
+  .rx-deal{ display:flex;align-items:center;gap:12px;padding:10px;border:1px solid var(--line-faint);border-radius:var(--r-md);margin-bottom:8px }
+  .rx-deal.credited{ border-color:#CFEFD9;background:#F8FEFB }
+  .rx-deal .rx-img{ width:46px;height:46px;flex:none;border-radius:10px;background:#fff;border:1px solid var(--line-faint);display:grid;place-items:center;overflow:hidden;font-size:22px }
+  .rx-deal .rx-img img{ width:100%;height:100%;object-fit:contain;padding:5px }
+  .rx-deal .rx-body{ flex:1;min-width:0 }
+  .rx-deal .rx-name{ font-size:13.5px;font-weight:700;line-height:1.25 }
+  .rx-deal .rx-meta{ margin-top:4px }
+  .rx-deal .rx-cash{ font-weight:800;color:var(--success);font-size:16px;white-space:nowrap }
+  .rx-foot{ font-size:11.5px;color:var(--ink-400);text-align:center;margin:12px 2px 0 }
+
   .kv{ display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin:10px 0 }
   .kv dt{ color:var(--ink-400);font-size:12px } .kv dd{ margin:0 0 8px;font-weight:700;font-size:14px }
   details{ margin-top:12px } summary{ cursor:pointer;color:var(--link);font-size:13px;font-weight:600 }
@@ -600,8 +619,10 @@ body.cashback-only .appbar .iconbtn{color:#fff}
 <div class="scrim" id="receiptScrim">
   <div class="sheet" id="receiptSheet">
     <div class="grip"></div>
-    <h2>Snap your receipt</h2>
-    <p class="sub-h">We'll read it and automatically credit any eligible cash back offers it contains — no clipping needed.</p>
+    <div id="rcCaptureHead">
+      <h2>Snap your receipt</h2>
+      <p class="sub-h">We'll read it and automatically credit any eligible cash back offers it contains — no clipping needed.</p>
+    </div>
 
     <div id="rcStep1">
       <div id="configWarn" class="banner warn hidden">Veryfi credentials aren't set yet. Add them to <code>.env</code> and restart the server to use live OCR.</div>
@@ -933,6 +954,7 @@ function resetReceipt(){
   chosenFile=null; fileInput.value=""; preview.innerHTML="";
   submitBtn.disabled=true; submitBtn.classList.add("hidden");
   drop.classList.add("hidden");
+  $("rcCaptureHead").classList.remove("hidden");
   $("rcStep1").classList.remove("hidden");
   $("rcResult").classList.add("hidden"); $("rcResult").innerHTML="";
   submitBtn.textContent="Submit receipt";
@@ -1117,6 +1139,7 @@ function showReceiptResult(d){
   const {redeemed}=matchReceipt(d);
   $("rcStep1").classList.add("hidden");
   $("rcResult").classList.remove("hidden");
+  $("rcCaptureHead").classList.add("hidden");
 
   if(redeemed.length===0){
     state.submissions.unshift({icon:"🧾",store:vendor,detail:"No eligible items found",when:"Just now",status:"declined",label:"Declined"});
@@ -1160,13 +1183,18 @@ function showReceiptResult(d){
 
 function rxRow(i){
   const idx=currentRx.items.indexOf(i);
+  const o=i.offer;
+  const img = o.image?`<img src="${esc(o.image)}" alt="">`:(o.icon||"🛒");
   const tag = i.status==="credited" ? `<span class="tag">${i.via==="upc"?"UPC match":(i.verified?"Scan verified":"Name match")}</span>`
             : i.status==="declined" ? `<span class="tag gray">Not verified</span>`
             : `<span class="tag warn">Name match · ${i.confidence}</span>`;
   const right = i.status==="toverify"
-    ? `<button class="btn btn-brand" style="width:auto;padding:8px 12px;font-size:12px" onclick="startVerify(${idx})">Scan to verify +${money(i.cashback)}</button>`
-    : `<span class="mc"${i.status==="declined"?' style="color:var(--ink-400)"':''}>${i.status==="credited"?"+"+money(i.cashback):"—"}</span>`;
-  return `<div class="matched-item"${i.status==="declined"?' style="opacity:.6"':''}><span>${i.offer.icon||"•"} ${esc(i.offer.product)}${i.size?" ("+esc(i.size)+")":""} ${tag}</span>${right}</div>`;
+    ? `<button class="btn btn-brand" style="width:auto;padding:8px 12px;font-size:12px;white-space:nowrap" onclick="startVerify(${idx})">Scan +${money(i.cashback)}</button>`
+    : `<span class="rx-cash"${i.status==="declined"?' style="color:var(--ink-400)"':''}>${i.status==="credited"?"+"+money(i.cashback):"—"}</span>`;
+  return `<div class="rx-deal ${i.status==="credited"?"credited":""}"${i.status==="declined"?' style="opacity:.6"':''}>
+      <span class="rx-img">${img}</span>
+      <span class="rx-body"><span class="rx-name">${esc(o.brand?o.brand+" ":"")}${esc(o.product)}${i.size?" ("+esc(i.size)+")":""}</span><span class="rx-meta">${tag}</span></span>
+      ${right}</div>`;
 }
 
 function renderRxResult(){
@@ -1175,14 +1203,19 @@ function renderRxResult(){
   const credited=rx.items.filter(i=>i.status==="credited");
   const creditedCash=credited.reduce((s,i)=>s+i.cashback,0);
   const hero = toverify.length
-    ? `<div class="result-hero"><div class="rj">🔎</div><div class="rt">Verify ${toverify.length} item${toverify.length>1?"s":""} to claim</div>
-        <div class="rd">These were matched by product name. Scan each one's barcode to confirm the purchase and claim its cash back.${credited.length?" "+money(creditedCash)+" already credited.":""}</div></div>`
-    : `<div class="result-hero"><div class="rj">🎉</div><div class="rt">${money(creditedCash)} cash back approved!</div>
-        <div class="rd">Credited to your card. New balance ${money(state.balance)}.</div></div>`;
+    ? `<div class="rx-hero verify"><div class="rx-badge">🔎</div>
+        <div class="rx-lab">Verify ${toverify.length} item${toverify.length>1?"s":""} to claim</div>
+        <div class="rx-sub">Matched by product name. Scan each barcode to confirm and claim its cash back.${credited.length?` ${money(creditedCash)} already credited.`:""}</div></div>`
+    : `<div class="rx-hero"><div class="rx-badge">✓</div>
+        <div class="rx-amt">+${money(creditedCash)}</div>
+        <div class="rx-lab">cash back added to your card</div>
+        <div class="rx-sub">New balance ${money(state.balance)}</div></div>`;
+  const foot = `<div class="rx-foot">${esc(rx.vendor)} · ${esc(rx.raw.date?String(rx.raw.date).slice(0,10):"—")} · ${Array.isArray(rx.raw.line_items)?rx.raw.line_items.length:0} items read</div>
+      <details style="margin-top:8px"><summary>View raw OCR JSON</summary><pre>${esc(JSON.stringify(rx.raw,null,2))}</pre></details>`;
   const btn = toverify.length
-    ? `<button class="btn btn-ghost btn-block" style="margin-top:14px" onclick="finishRx()">Done — decline the rest</button>`
+    ? `<button class="btn btn-ghost btn-block" style="margin-top:14px" onclick="finishRx()">Decline the rest</button>`
     : `<button class="btn btn-primary btn-block" style="margin-top:14px" onclick="finishRx()">Done</button>`;
-  $("rcResult").innerHTML=hero+`<div style="margin:6px 2px">${rx.items.map(rxRow).join("")}</div>`+rxSummaryHtml(rx.raw)+btn;
+  $("rcResult").innerHTML=hero+`<div class="rx-deals-h">Deals matched</div><div>${rx.items.map(rxRow).join("")}</div>`+foot+btn;
 }
 
 window.startVerify=function(idx){
