@@ -1193,7 +1193,7 @@ function rxRow(i){
     : `<span class="rx-cash"${i.status==="declined"?' style="color:var(--ink-400)"':''}>${i.status==="credited"?"+"+money(i.cashback):"—"}</span>`;
   return `<div class="rx-deal ${i.status==="credited"?"credited":""}"${i.status==="declined"?' style="opacity:.6"':''}>
       <span class="rx-img">${img}</span>
-      <span class="rx-body"><span class="rx-name">${esc(o.brand?o.brand+" ":"")}${esc(o.product)}${i.size?" ("+esc(i.size)+")":""}</span><span class="rx-meta">${tag}</span></span>
+      <span class="rx-body"><span class="rx-name">${esc(o.product)}${i.size?" ("+esc(i.size)+")":""}</span><span class="rx-meta">${tag}</span></span>
       ${right}</div>`;
 }
 
