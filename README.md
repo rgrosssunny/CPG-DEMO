@@ -18,7 +18,7 @@ python app.py               # serves on http://localhost:5050
 
 Open http://localhost:5050.
 
-> No setup needed for a quick look: open `design_preview.html` directly in a browser —
+> No setup needed for a quick look: open `design_preview_noclip.html` directly in a browser —
 > it’s the full UI with a mocked backend (no real Veryfi calls).
 
 ## Run in GitHub Codespaces
