@@ -426,6 +426,45 @@ body.cashback-only .appbar .iconbtn{color:#fff}
   };
 })();
 </script>
+<style>
+#authGate{position:fixed;inset:0;z-index:99999;background:#173D53;display:flex;align-items:center;justify-content:center;padding:24px;font-family:Manrope,system-ui,sans-serif}
+#authGate .ag-card{width:100%;max-width:360px;background:#fff;border-radius:20px;padding:28px 24px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+#authGate .ag-brand{font-weight:800;font-size:18px;color:#173D53;margin:0 0 4px}
+#authGate .ag-sub{font-size:13px;color:#575757;margin:0 0 6px}
+#authGate label{display:block;font-size:12px;font-weight:700;color:#173D53;margin:14px 0 5px}
+#authGate input{width:100%;box-sizing:border-box;padding:12px;border:1px solid #C4C4C4;border-radius:10px;font:inherit;font-size:15px}
+#authGate input:focus{outline:none;border-color:#1DB0C9}
+#authGate button{width:100%;margin-top:18px;padding:13px;border:0;border-radius:999px;background:#173D53;color:#fff;font:inherit;font-weight:800;font-size:15px;cursor:pointer}
+#authGate button:hover{filter:brightness(1.08)}
+#authGate .ag-err{color:#B91C1C;font-size:13px;font-weight:600;margin-top:12px;min-height:16px}
+</style>
+<div id="authGate">
+  <form class="ag-card" id="agForm" autocomplete="off">
+    <div class="ag-brand">✦ ABC Health — Cash Back</div>
+    <div class="ag-sub">Enter the demo credentials to continue.</div>
+    <label for="agUser">Username</label>
+    <input id="agUser" type="text" autocapitalize="off" autocorrect="off" spellcheck="false" />
+    <label for="agPass">Password</label>
+    <input id="agPass" type="password" />
+    <button type="submit">Sign in</button>
+    <div class="ag-err" id="agErr"></div>
+  </form>
+</div>
+<script>
+(function(){
+  var USER="DemoCPG", PASS="deMo2026CpG!";
+  var gate=document.getElementById('authGate');
+  function unlock(){ gate.style.display='none'; }
+  try{ if(localStorage.getItem('cpgDemoAuth')==='1'){ unlock(); return; } }catch(e){}
+  document.getElementById('agForm').addEventListener('submit',function(e){
+    e.preventDefault();
+    var u=document.getElementById('agUser').value.trim();
+    var p=document.getElementById('agPass').value;
+    if(u===USER && p===PASS){ try{localStorage.setItem('cpgDemoAuth','1');}catch(e){} unlock(); }
+    else{ document.getElementById('agErr').textContent='Incorrect username or password.'; }
+  });
+})();
+</script>
 <div class="previewbg">
 <div class="device">
   <!-- App bar -->
