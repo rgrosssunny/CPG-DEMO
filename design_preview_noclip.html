@@ -455,12 +455,12 @@ body.cashback-only .appbar .iconbtn{color:#fff}
   var USER="DemoCPG", PASS="deMo2026CpG!";
   var gate=document.getElementById('authGate');
   function unlock(){ gate.style.display='none'; }
-  try{ if(localStorage.getItem('cpgDemoAuth')==='1'){ unlock(); return; } }catch(e){}
+  try{ if(sessionStorage.getItem('cpgDemoAuth')==='1'){ unlock(); return; } }catch(e){}
   document.getElementById('agForm').addEventListener('submit',function(e){
     e.preventDefault();
     var u=document.getElementById('agUser').value.trim();
     var p=document.getElementById('agPass').value;
-    if(u===USER && p===PASS){ try{localStorage.setItem('cpgDemoAuth','1');}catch(e){} unlock(); }
+    if(u===USER && p===PASS){ try{sessionStorage.setItem('cpgDemoAuth','1');}catch(e){} unlock(); }
     else{ document.getElementById('agErr').textContent='Incorrect username or password.'; }
   });
 })();
