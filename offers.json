@@ -4,7 +4,7 @@
     "product": "Centrum Silver Adult 50+ Multivitamin",
     "brand": "Centrum",
     "category": "otc",
-    "cashback": 3.0,
+    "cashback": 3,
     "campaign_id": "CMP-1002",
     "icon": "💊",
     "expires": "2026-07-31",
@@ -14,17 +14,17 @@
       {
         "size": "65 ct",
         "upc": "300450449016",
-        "cashback": 2.0
+        "cashback": 2
       },
       {
         "size": "100 ct",
         "upc": "300450449108",
-        "cashback": 3.0
+        "cashback": 3
       },
       {
         "size": "200 ct",
         "upc": "300450449207",
-        "cashback": 4.0
+        "cashback": 4
       }
     ],
     "image": "images/centrum.jpg"
@@ -34,7 +34,7 @@
     "product": "Ensure Original Nutrition Shake",
     "brand": "Ensure",
     "category": "otc",
-    "cashback": 4.0,
+    "cashback": 4,
     "campaign_id": "CMP-1004",
     "icon": "🥤",
     "expires": "2026-07-15",
@@ -44,45 +44,35 @@
       {
         "size": "6 ct",
         "upc": "070074512525",
-        "cashback": 4.0
+        "cashback": 4
       },
       {
         "size": "16 ct",
         "upc": "070074512563",
-        "cashback": 9.0
+        "cashback": 9
       }
     ],
     "image": "images/ensure.jpg"
   },
   {
-    "upc": "300450231024",
-    "product": "Tylenol Extra Strength",
-    "brand": "Tylenol",
+    "upc": "305730151058",
+    "product": "Advil Ibuprofen 200 mg Tablets",
+    "brand": "Advil",
     "category": "otc",
-    "cashback": 2.0,
+    "cashback": 2,
     "campaign_id": "CMP-1005",
     "icon": "💊",
     "expires": "2026-08-30",
     "status": "active",
-    "tagline": "Pain reliever & fever reducer",
+    "tagline": "Pain reliever & fever reducer, ibuprofen 200 mg",
     "sizes": [
       {
-        "size": "50 ct",
-        "upc": "300450231017",
-        "cashback": 1.5
-      },
-      {
         "size": "100 ct",
-        "upc": "300450231024",
-        "cashback": 2.0
-      },
-      {
-        "size": "225 ct",
-        "upc": "300450231222",
-        "cashback": 3.5
+        "upc": "305730151058",
+        "cashback": 2
       }
     ],
-    "image": "images/tylenol.jpg"
+    "image": "images/advil.jpg"
   },
   {
     "upc": "036000291452",
@@ -179,7 +169,7 @@
     "product": "Milk",
     "brand": "",
     "category": "food-and-produce",
-    "cashback": 1.0,
+    "cashback": 1,
     "campaign_id": "CMP-1008",
     "icon": "🥛",
     "expires": "2026-12-31",
@@ -189,12 +179,12 @@
       {
         "size": "Vitamin D",
         "upc": "2113007100",
-        "cashback": 1.0
+        "cashback": 1
       },
       {
         "size": "2%",
         "upc": "2113007101",
-        "cashback": 1.0
+        "cashback": 1
       }
     ],
     "image": "images/milk.jpg"
@@ -224,7 +214,7 @@
     "product": "Colgate Peroxyl Mouth Sore Rinse",
     "brand": "Colgate",
     "category": "otc",
-    "cashback": 2.0,
+    "cashback": 2,
     "campaign_id": "CMP-1010",
     "icon": "🦷",
     "expires": "2026-08-31",
@@ -235,7 +225,7 @@
       {
         "size": "8 fl oz",
         "upc": "309078697106",
-        "cashback": 2.0
+        "cashback": 2
       }
     ]
   },
@@ -280,22 +270,22 @@
     ]
   },
   {
-    "upc": "312547429306",
-    "product": "Zyrtec 24HR Allergy Relief Tablets",
-    "brand": "Zyrtec",
+    "upc": "041100809131",
+    "product": "Claritin 24HR Non-Drowsy Allergy Tablets",
+    "brand": "Claritin",
     "category": "otc",
-    "cashback": 4.0,
+    "cashback": 4,
     "campaign_id": "CMP-1013",
     "icon": "💊",
     "expires": "2026-07-31",
     "status": "active",
-    "tagline": "24-hour allergy relief, cetirizine HCl 10 mg",
-    "image": "images/zyrtec.jpg",
+    "tagline": "24-hour non-drowsy allergy relief, loratadine 10 mg",
+    "image": "images/claritin.jpg",
     "sizes": [
       {
         "size": "30 ct",
-        "upc": "312547429306",
-        "cashback": 4.0
+        "upc": "041100809131",
+        "cashback": 4
       }
     ]
   }
