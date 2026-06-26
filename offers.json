@@ -198,5 +198,105 @@
       }
     ],
     "image": "images/milk.jpg"
+  },
+  {
+    "upc": "381371171422",
+    "product": "Band-Aid Flexible Fabric Adhesive Bandages",
+    "brand": "Band-Aid",
+    "category": "otc",
+    "cashback": 1.5,
+    "campaign_id": "CMP-1009",
+    "icon": "🩹",
+    "expires": "2026-09-30",
+    "status": "active",
+    "tagline": "Comfortable, flexible everyday protection",
+    "image": "images/band-aid.jpg",
+    "sizes": [
+      {
+        "size": "30 ct",
+        "upc": "381371171422",
+        "cashback": 1.5
+      }
+    ]
+  },
+  {
+    "upc": "309078697106",
+    "product": "Colgate Peroxyl Mouth Sore Rinse",
+    "brand": "Colgate",
+    "category": "otc",
+    "cashback": 2.0,
+    "campaign_id": "CMP-1010",
+    "icon": "🦷",
+    "expires": "2026-08-31",
+    "status": "active",
+    "tagline": "Soothes & cleanses minor mouth irritations",
+    "image": "images/colgate-peroxyl.jpg",
+    "sizes": [
+      {
+        "size": "8 fl oz",
+        "upc": "309078697106",
+        "cashback": 2.0
+      }
+    ]
+  },
+  {
+    "upc": "310158063018",
+    "product": "Polident Denture Cleanser Tablets",
+    "brand": "Polident",
+    "category": "otc",
+    "cashback": 1.5,
+    "campaign_id": "CMP-1011",
+    "icon": "🦷",
+    "expires": "2026-10-15",
+    "status": "active",
+    "tagline": "Kills 99.99% of odor-causing bacteria",
+    "image": "images/polident.jpg",
+    "sizes": [
+      {
+        "size": "84 ct",
+        "upc": "310158063018",
+        "cashback": 1.5
+      }
+    ]
+  },
+  {
+    "upc": "075137000019",
+    "product": "Sea Bond Denture Adhesive Seals",
+    "brand": "Sea Bond",
+    "category": "otc",
+    "cashback": 1.25,
+    "campaign_id": "CMP-1012",
+    "icon": "🦷",
+    "expires": "2026-10-15",
+    "status": "active",
+    "tagline": "All-day hold, zinc-free",
+    "image": "images/sea-bond.jpg",
+    "sizes": [
+      {
+        "size": "2 x 15 ct",
+        "upc": "075137000019",
+        "cashback": 1.25
+      }
+    ]
+  },
+  {
+    "upc": "312547429306",
+    "product": "Zyrtec 24HR Allergy Relief Tablets",
+    "brand": "Zyrtec",
+    "category": "otc",
+    "cashback": 4.0,
+    "campaign_id": "CMP-1013",
+    "icon": "💊",
+    "expires": "2026-07-31",
+    "status": "active",
+    "tagline": "24-hour allergy relief, cetirizine HCl 10 mg",
+    "image": "images/zyrtec.jpg",
+    "sizes": [
+      {
+        "size": "30 ct",
+        "upc": "312547429306",
+        "cashback": 4.0
+      }
+    ]
   }
 ]
