@@ -34,7 +34,7 @@
     "product": "Ensure Original Nutrition Shake",
     "brand": "Ensure",
     "category": "otc",
-    "cashback": 4,
+    "cashback": 3,
     "campaign_id": "CMP-1004",
     "icon": "🥤",
     "expires": "2026-07-15",
@@ -44,12 +44,12 @@
       {
         "size": "6 ct",
         "upc": "070074512525",
-        "cashback": 4
+        "cashback": 2
       },
       {
         "size": "16 ct",
         "upc": "070074512563",
-        "cashback": 9
+        "cashback": 3
       }
     ],
     "image": "images/ensure.jpg"
