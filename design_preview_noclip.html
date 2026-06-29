@@ -1361,7 +1361,8 @@ const API_BASE = (window.BACKEND_URL || "").replace(/\/$/, "");
    whose UA now reads as desktop) while excluding mouse-driven touch laptops. */
 const IS_TOUCH_DEVICE = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches)
   || /Android|iPhone|iPad|iPod|Mobile|Tablet|Silk|Kindle/i.test(navigator.userAgent);
-const CAN_CAMERA = IS_TOUCH_DEVICE && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+// Prototype: allow camera capture on any device with a camera (incl. desktop), not just touch devices.
+const CAN_CAMERA = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 
 function applyCaptureMode(){
   const cam = $("useCamera"), divider = $("camOrDivider");
