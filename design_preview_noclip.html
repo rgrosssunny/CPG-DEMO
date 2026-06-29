@@ -1,7 +1,7 @@
 <!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ABC Health — Cash Back (No-Clip)</title>
+<title>ABC Health — Rewards (No-Clip)</title>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="static/receipt-capture-sdk.js?v=15"></script>
@@ -491,7 +491,7 @@ body.cashback-only .appbar .iconbtn{color:#fff}
 </style>
 <div id="authGate">
   <form class="ag-card" id="agForm" autocomplete="off">
-    <div class="ag-brand">✦ ABC Health — Cash Back</div>
+    <div class="ag-brand">✦ ABC Health — Rewards</div>
     <div class="ag-sub">Enter the demo credentials to continue.</div>
     <label for="agUser">Username</label>
     <input id="agUser" type="text" autocapitalize="off" autocorrect="off" spellcheck="false" />
@@ -579,12 +579,12 @@ body.cashback-only .appbar .iconbtn{color:#fff}
         <span class="emoji">🧴</span>
       </div>
 
-      <div class="section-label">Cash Back</div>
+      <div class="section-label">Rewards</div>
       <a class="cb-cta cashback-link" href="design_preview_noclip.html?view=cashback">
         <div class="cb-ic">💵</div>
         <div class="cb-body">
-          <div class="cb-t">Earn Cash Back on everyday brands <span class="cb-ext">Separate site ↗</span></div>
-          <div class="cb-d">Get money back when you buy participating products. Opens our dedicated Cash Back site.</div>
+          <div class="cb-t">Earn Rewards on everyday brands <span class="cb-ext">Separate site ↗</span></div>
+          <div class="cb-d">Get money back when you buy participating products. Opens our dedicated Rewards site.</div>
         </div>
         <span class="cb-chev">›</span>
       </a>
@@ -665,8 +665,8 @@ body.cashback-only .appbar .iconbtn{color:#fff}
       <a class="cb-cta cashback-link" href="design_preview_noclip.html?view=cashback">
         <div class="cb-ic">💵</div>
         <div class="cb-body">
-          <div class="cb-t">Cash Back on everyday brands <span class="cb-ext">Separate site ↗</span></div>
-          <div class="cb-d">Buy participating products and get money back. Opens our dedicated Cash Back site.</div>
+          <div class="cb-t">Rewards on everyday brands <span class="cb-ext">Separate site ↗</span></div>
+          <div class="cb-d">Buy participating products and get money back. Opens our dedicated Rewards site.</div>
         </div>
         <span class="cb-chev">›</span>
       </a>
@@ -679,11 +679,11 @@ body.cashback-only .appbar .iconbtn{color:#fff}
 
     <!-- ================= CASH BACK (standalone site, reached via ?view=cashback) ================= -->
     <section class="tab-panel" id="tab-cashback">
-      <h1 class="page">Cash back on everyday buys</h1>
-      <p class="muted" style="margin:0 2px 12px;font-size:13px;line-height:1.4">Scan your receipt to get cash back on everyday items you buy.</p>
+      <h1 class="page">Rewards on everyday buys</h1>
+      <p class="muted" style="margin:0 2px 12px;font-size:13px;line-height:1.4">Scan your receipt to get rewards on everyday items you buy.</p>
 
       <div class="cashback-strip">
-        <div><div class="lab">Cashback earned</div><div class="num" id="cbEarned">$0.00</div></div>
+        <div><div class="lab">Rewards earned</div><div class="num" id="cbEarned">$0.00</div></div>
         <div style="text-align:right"><div class="lab">Pending review</div><div class="num" id="cbPending">$0.00</div></div>
       </div>
 
@@ -700,7 +700,7 @@ body.cashback-only .appbar .iconbtn{color:#fff}
         </div>
       </div>
 
-      <div class="section-label">Cash back offers</div>
+      <div class="section-label">Rewards offers</div>
       <div id="featuredBanner"></div>
       <div class="filter-bar">
         <select id="sortSel" class="fsel" aria-label="Sort offers">
@@ -742,11 +742,11 @@ body.cashback-only .appbar .iconbtn{color:#fff}
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="discTitle">
     <div class="m-ic">🛍️</div>
     <div class="brandline"><span class="spark">✦</span> Powered by Sunny Benefits</div>
-    <h2 id="discTitle">About these cash back offers</h2>
-    <p>These cash back offers are provided by <b>Sunny Benefits</b> and are funded by participating consumer-brand partners.</p>
+    <h2 id="discTitle">About these Rewards offers</h2>
+    <p>These Rewards offers are provided by <b>Sunny Benefits</b> and are funded by participating consumer-brand partners.</p>
     <p><b>They are not a benefit of your health plan.</b> Your plan does not sponsor, endorse, fund, or administer these rewards and is not responsible for them in any way.</p>
-    <div class="m-note">Cash back is paid to your Sunny Rewards card, separate from any plan benefit. Reward earnings may be taxable and are your responsibility to report. Offers are subject to availability and may change or end at any time.</div>
-    <div class="m-note" id="discThirdParty" style="display:none">You're about to leave this app and continue to the Cash Back site — a separate, third-party website operated by Sunny Benefits, not your health plan.</div>
+    <div class="m-note">Rewards are paid to your Sunny Rewards card, separate from any plan benefit. Reward earnings may be taxable and are your responsibility to report. Offers are subject to availability and may change or end at any time.</div>
+    <div class="m-note" id="discThirdParty" style="display:none">You're about to leave this app and continue to the Rewards site — a separate, third-party website operated by Sunny Benefits, not your health plan.</div>
     <button class="btn btn-primary btn-block" id="disclosureOk">Got it — show me the offers</button>
   </div>
 </div>
@@ -757,7 +757,7 @@ body.cashback-only .appbar .iconbtn{color:#fff}
     <div class="grip"></div>
     <div id="rcCaptureHead">
       <h2>Snap your receipt</h2>
-      <p class="sub-h">We'll read it and automatically credit any eligible cash back offers it contains — no clipping needed.</p>
+      <p class="sub-h">We'll read it and automatically credit any eligible Rewards offers it contains — no clipping needed.</p>
     </div>
 
     <div id="rcStep1">
@@ -838,7 +838,7 @@ const state = {
   cashbackPending: 0.00,
   offers: [],
   submissions: [
-    { icon:"🧾", store:"CVS Pharmacy", detail:"Centrum Silver · $3.00 cash back", when:"2 days ago", status:"credited", label:"Credited" },
+    { icon:"🧾", store:"CVS Pharmacy", detail:"Centrum Silver · $3.00 in rewards", when:"2 days ago", status:"credited", label:"Credited" },
     { icon:"🧾", store:"Walmart Supercenter", detail:"Under review — up to 24 hrs", when:"Yesterday", status:"pending", label:"Pending review" },
     { icon:"🧾", store:"Giant Food", detail:"No eligible items found", when:"4 days ago", status:"declined", label:"Declined" },
     { icon:"🧾", store:"Costco Wholesale", detail:"Reversed — duplicate receipt", when:"1 wk ago", status:"clawed", label:"Clawed back" },
@@ -933,7 +933,7 @@ function renderStrip(){
 function cbDisplay(o){
   const amts=(o.sizes&&o.sizes.length?o.sizes.map(s=>Number(s.cashback)):[Number(o.cashback)]);
   const max=Math.max(...amts), min=Math.min(...amts);
-  return (max!==min) ? "Up to "+money(max)+" back" : money(max)+" back";
+  return (max!==min) ? "Up to "+money(max)+" in rewards" : money(max)+" in rewards";
 }
 const CAT_LABEL={otc:"OTC", grocery:"Grocery", "food-and-produce":"Food & Produce"};
 function renderFilters(){
@@ -966,7 +966,7 @@ function renderOffers(){
       <div class="ic">${o.image?`<img src="${esc(o.image)}" alt="${esc(o.product||"")}">`:(o.icon||"🛒")}</div>
       <div class="brand-n">${esc(o.brand||"")}</div>
       <div class="prod">${esc(o.product||"")}</div>
-      <div class="cb">${ex?money(o.cashback)+" back":cbDisplay(o)}</div>
+      <div class="cb">${ex?money(o.cashback)+" in rewards":cbDisplay(o)}</div>
       <div class="exp">${ex?"Budget exhausted":(o.expires?("Expires "+fmtExp(o.expires)):"")}</div>
     </div>`;
   }).join("");
@@ -986,7 +986,7 @@ function renderFeatured(){
       <div class="fb-name">${esc(o.product||"")}</div>
       ${o.tagline?`<div class="fb-tagline">${esc(o.tagline)}</div>`:""}
     </div>
-    <div class="fb-cb">${cbDisplay(o).replace(" back","")}<span>back</span></div>
+    <div class="fb-cb">${cbDisplay(o).replace(" in rewards","")}<span>in rewards</span></div>
   </div>`;
   el.querySelector(".feat-banner").addEventListener("click",()=>openOffer(o.campaign_id));
 }
@@ -1018,10 +1018,10 @@ function renderCart(){
   body.innerHTML = all.map(o=>`<div class="cart-row">
       <div class="ci">${o.icon||"🏷️"}</div>
       <div><div class="cn">${esc(o.product)}</div><div class="cm">${esc(o.brand||"")}${o.expires?" · exp "+fmtExp(o.expires):""}</div></div>
-      <div class="cc">${cbDisplay(o).replace(" back","")}</div>
+      <div class="cc">${cbDisplay(o).replace(" in rewards","")}</div>
       <button class="cx" title="Unclip" onclick="toggleClip('${esc(o.campaign_id)}')">✕</button>
     </div>`).join("")
-    + `<div class="cart-total"><span>Potential cash back</span><span class="amt">up to ${money(total)}</span></div>
+    + `<div class="cart-total"><span>Potential rewards</span><span class="amt">up to ${money(total)}</span></div>
        <button class="btn btn-primary btn-block" style="margin-top:14px" onclick="closeCart();openReceipt()">Snap a receipt to redeem</button>`;
 }
 /* ---------- Shop disclosure modal (powered by Sunny Benefits, not the plan) ---------- */
@@ -1036,7 +1036,7 @@ document.querySelectorAll(".cashback-link").forEach(link=>{
     e.preventDefault();
     pendingNav=link.getAttribute("href");
     $("discThirdParty").style.display="block";
-    $("disclosureOk").textContent="Got it — continue to Cash Back ›";
+    $("disclosureOk").textContent="Got it — continue to Rewards ›";
     disclosureScrim.classList.add("open");
   });
 });
@@ -1053,7 +1053,7 @@ function renderStores(){
     const n = s.carries.filter(c=>state.offers.some(o=>o.campaign_id===c)).length;
     return `<div class="store" data-store="${s.id}">
       <div class="logo" style="background:${s.color}">${esc(s.short)}</div>
-      <div class="b"><div class="n">${esc(s.name)}</div><div class="m">${esc(s.distance)} · ${n} cashback offer${n===1?"":"s"}</div></div>
+      <div class="b"><div class="n">${esc(s.name)}</div><div class="m">${esc(s.distance)} · ${n} Rewards offer${n===1?"":"s"}</div></div>
       <span class="chev">›</span></div>`;
   }).join("");
   $("storeList").querySelectorAll(".store[data-store]").forEach(el=>{
@@ -1288,7 +1288,7 @@ function showReceiptResult(d){
     renderSubs();
     $("rcResult").innerHTML=`
       <div class="result-hero"><div class="rj">🔍</div><div class="rt">No eligible items found</div>
-        <div class="rd">We read your receipt but didn't find any products matching an active cash back offer.</div></div>
+        <div class="rd">We read your receipt but didn't find any products matching an active Rewards offer.</div></div>
       ${rxSummaryHtml(d)}
       <button class="btn btn-primary btn-block" style="margin-top:14px" onclick="closeReceiptDone();switchTab('cashback')">View active offers</button>
       <button class="btn btn-ghost btn-block" style="margin-top:10px" onclick="closeReceiptDone()">Done</button>`;
@@ -1347,10 +1347,10 @@ function renderRxResult(){
   const hero = toverify.length
     ? `<div class="rx-hero verify"><div class="rx-badge">🔎</div>
         <div class="rx-lab">Verify ${toverify.length} item${toverify.length>1?"s":""} to claim</div>
-        <div class="rx-sub">Matched by product name. Scan each barcode to confirm and claim its cash back.${credited.length?` ${money(creditedCash)} already credited.`:""}</div></div>`
+        <div class="rx-sub">Matched by product name. Scan each barcode to confirm and claim its reward.${credited.length?` ${money(creditedCash)} already credited.`:""}</div></div>`
     : `<div class="rx-hero"><div class="rx-badge">✓</div>
         <div class="rx-amt">+${money(creditedCash)}</div>
-        <div class="rx-lab">cash back added to your card</div>
+        <div class="rx-lab">in rewards added to your card</div>
         <div class="rx-sub">New balance ${money(state.balance)}</div></div>`;
   const foot = `<div class="rx-foot">${esc(rx.vendor)} · ${esc(rx.raw.date?String(rx.raw.date).slice(0,10):"—")} · ${Array.isArray(rx.raw.line_items)?rx.raw.line_items.length:0} items read</div>
       <details style="margin-top:8px"><summary>View raw OCR JSON</summary><pre>${esc(JSON.stringify(rx.raw,null,2))}</pre></details>`;
@@ -1391,7 +1391,7 @@ window.finishRx=function(){
     const declined=currentRx.items.filter(i=>i.status==="toverify");
     declined.forEach(i=>i.status="declined");
     const cash=credited.reduce((s,i)=>s+i.cashback,0);
-    if(credited.length) state.submissions.unshift({icon:"🧾",store:currentRx.vendor,detail:`${[...new Set(credited.map(i=>i.offer.brand))].join(", ")} · ${money(cash)} cash back`,when:"Just now",status:"credited",label:"Credited"});
+    if(credited.length) state.submissions.unshift({icon:"🧾",store:currentRx.vendor,detail:`${[...new Set(credited.map(i=>i.offer.brand))].join(", ")} · ${money(cash)} in rewards`,when:"Just now",status:"credited",label:"Credited"});
     if(declined.length) state.submissions.unshift({icon:"🧾",store:currentRx.vendor,detail:`${declined.length} item(s) couldn't be verified`,when:"Just now",status:"declined",label:"Declined"});
     renderSubs();
   }
@@ -1424,7 +1424,7 @@ function checkUpc(upc){
       const ex = false;
       scanResult.innerHTML=`
         <div class="result-hero" style="padding-top:8px"><div class="rj">${ex?"⌛":"✅"}</div>
-          <div class="rt">${ex?"Offer fully claimed":money(d.cashback)+" cash back"}</div>
+          <div class="rt">${ex?"Offer fully claimed":money(d.cashback)+" in rewards"}</div>
           <div class="rd">${esc(d.product||"")}</div></div>
         ${ex
           ? `<div class="banner warn">This campaign's budget is exhausted — the offer is no longer available.</div>`
@@ -1434,7 +1434,7 @@ function checkUpc(upc){
     }else{
       scanResult.innerHTML=`
         <div class="result-hero" style="padding-top:8px"><div class="rj">🔍</div><div class="rt">No active offer</div>
-          <div class="rd">No cashback offer for UPC ${esc(d.scanned_upc||upc)}.</div></div>
+          <div class="rd">No Rewards offer for UPC ${esc(d.scanned_upc||upc)}.</div></div>
         <div class="banner info">Browse the featured offers to see what's eligible right now.</div>`;
     }
 }
@@ -1523,8 +1523,8 @@ function openStore(id){
       <div class="sb-logo" style="background:${s.color}">${esc(s.short)}</div>
       <div><div class="sb-name">${esc(s.name)}</div><div class="sb-meta">${esc(s.distance)} · ${esc(s.address)}</div></div>
     </div>
-    <div class="banner info">${active.length} active cashback offer${active.length===1?"":"s"} available here. Buy, then snap your receipt to claim.</div>
-    <div class="detail-label">Cashback offers here</div>
+    <div class="banner info">${active.length} active Rewards offer${active.length===1?"":"s"} available here. Buy, then snap your receipt to claim.</div>
+    <div class="detail-label">Rewards offers here</div>
     <div class="card">${rowsHtml}</div>
     <button class="btn btn-ghost btn-block" style="margin-top:16px" id="stClose">Close</button>`;
 
