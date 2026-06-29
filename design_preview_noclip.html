@@ -371,6 +371,22 @@ body.cashback-only .appbar{background:var(--brand-2)}
 body.cashback-only .appbar .brand{color:#fff}
 body.cashback-only .appbar .iconbtn{color:#fff}
 
+/* ===== Rewards page layout experiments (reached via &layout=a / &layout=b) =====
+   Both options slim the header so offers surface near the top. */
+body.layout-a #cbSubtitle, body.layout-b #cbSubtitle{ display:none }
+body.layout-a #tab-cashback>h1.page, body.layout-b #tab-cashback>h1.page{ font-size:19px; margin-bottom:8px }
+body.layout-a .cashback-strip, body.layout-b .cashback-strip{ min-height:0; padding:12px 16px; margin:8px 0 }
+body.layout-a .cashback-strip .lab, body.layout-b .cashback-strip .lab{ font-size:11px }
+body.layout-a .cashback-strip .num, body.layout-b .cashback-strip .num{ font-size:18px; margin-top:1px }
+body.layout-a .action-tiles{ display:none }
+body.layout-a #fabBarcode{ display:flex }
+body.layout-b .action-tiles{ margin:10px 0 }
+body.layout-b .action-tile{ padding:11px 12px; display:flex; align-items:center; gap:10px; text-align:left }
+body.layout-b .action-tile .glyph{ margin:0; width:34px; height:34px }
+body.layout-b .action-tile .glyph svg{ width:18px; height:18px }
+body.layout-b .action-tile .at-d{ display:none }
+body.layout-b .action-tile .at-t{ font-size:13.5px }
+
 /* ===== Reference Design 2.0 — Earn featured rewards ===== */
 .earn-head{ display:flex; align-items:baseline; gap:9px; margin:8px 2px 14px }
 .earn-head .big{ font-size:42px; font-weight:800; letter-spacing:-.02em; line-height:1 }
@@ -748,7 +764,7 @@ body.cashback-only .appbar .iconbtn{color:#fff}
     <!-- ================= CASH BACK (standalone site, reached via ?view=cashback) ================= -->
     <section class="tab-panel" id="tab-cashback">
       <h1 class="page">Rewards on everyday buys</h1>
-      <p class="muted" style="margin:0 2px 12px;font-size:13px;line-height:1.4">Scan your receipt to get rewards on everyday items you buy.</p>
+      <p class="muted" id="cbSubtitle" style="margin:0 2px 12px;font-size:13px;line-height:1.4">Scan your receipt to get rewards on everyday items you buy.</p>
 
       <div class="cashback-strip">
         <div><div class="lab">Rewards earned</div><div class="num" id="cbEarned">$0.00</div></div>
@@ -800,7 +816,11 @@ body.cashback-only .appbar .iconbtn{color:#fff}
   <div class="fab-wrap" id="fabWrap">
     <button class="fab-receipt" id="fabReceipt">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h11a1 1 0 0 1 1 1v17l-2.5-1.6L13 21l-2.5-1.6L8 21l-2.5-1.6L4 21V4a1 1 0 0 1 1-1z"/><path d="M8 8h6M8 12h6"/></svg>
-      Scan receipt to earn
+      <span id="fabReceiptLabel">Scan receipt to earn</span>
+    </button>
+    <button class="fab-cart" id="fabBarcode" style="display:none">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5v14M7 5v14M11 5v14M15 5v14M19 5v14M21 5v14"/></svg>
+      Check a product
     </button>
   </div>
 </div>
@@ -1475,6 +1495,7 @@ let qr=null;
 const BARCODE_TITLE="Check a product", BARCODE_SUB="Check a barcode against active offers. Decoding happens in your browser — only the UPC number is sent, never an image.";
 function resetBarcodeMode(){ verifyIdx=null; $("barcodeTitle").textContent=BARCODE_TITLE; $("barcodeSub").textContent=BARCODE_SUB; }
 $("openBarcode").addEventListener("click",()=>{ resetBarcodeMode(); scanResult.innerHTML=""; barcodeScrim.classList.add("open"); });
+$("fabBarcode")?.addEventListener("click",()=>{ resetBarcodeMode(); scanResult.innerHTML=""; barcodeScrim.classList.add("open"); });
 $("closeBarcode").addEventListener("click",closeBarcode);
 barcodeScrim.addEventListener("click",e=>{ if(e.target===barcodeScrim) closeBarcode(); });
 async function closeBarcode(){ if(qr){ try{await qr.stop();}catch{} } resetScanButtons(); resetBarcodeMode(); barcodeScrim.classList.remove("open"); }
@@ -1611,6 +1632,9 @@ function openStore(id){
 (function(){
   if(!/[?&]view=cashback\b/.test(location.search)) return;
   document.body.classList.add("cashback-only");
+  const lm=(location.search.match(/[?&]layout=([ab])\b/)||[])[1];
+  if(lm) document.body.classList.add("layout-"+lm);
+  if(lm==="a"){ const rl=document.getElementById("fabReceiptLabel"); if(rl) rl.textContent="Snap a receipt"; }
   shopDisclosureShown=true;                       // disclosure already acknowledged before navigating
   const bar=document.querySelector(".appbar");
   if(bar) bar.innerHTML=
