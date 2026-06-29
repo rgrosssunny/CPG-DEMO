@@ -366,10 +366,61 @@
    hide the app tabs + other panels and rebrand the bar, so the full cashback
    module renders as its own separate page. */
 body.cashback-only .seg-tabs{display:none}
-body.cashback-only #tab-overview,body.cashback-only #tab-earn{display:none!important}
+body.cashback-only #tab-overview,body.cashback-only #tab-earn,body.cashback-only #tab-shop{display:none!important}
 body.cashback-only .appbar{background:var(--brand-2)}
 body.cashback-only .appbar .brand{color:#fff}
 body.cashback-only .appbar .iconbtn{color:#fff}
+
+/* ===== Reference Design 2.0 — Earn featured rewards ===== */
+.earn-head{ display:flex; align-items:baseline; gap:9px; margin:8px 2px 14px }
+.earn-head .big{ font-size:42px; font-weight:800; letter-spacing:-.02em; line-height:1 }
+.earn-head .big sup{ font-size:20px; top:-.7em; font-weight:700 }
+.earn-head .lab{ font-size:18px; color:var(--ink-500); font-weight:600 }
+.reward-card{ display:flex; align-items:center; gap:14px; background:var(--paper); border:1px solid var(--line-faint);
+  border-radius:var(--r-lg); box-shadow:var(--shadow-card); padding:12px 14px; cursor:pointer; margin-bottom:10px;
+  transition:all var(--dur) var(--ease) }
+.reward-card:hover{ box-shadow:var(--shadow-md); transform:translateY(-1px) }
+.reward-card .rb{ width:62px;height:62px;flex:none;border-radius:14px;display:grid;place-items:center;color:#fff;
+  font-weight:800;font-size:21px;background:linear-gradient(135deg,var(--brand),var(--brand-2)) }
+.reward-card .rb sup{ font-size:12px;top:-.5em }
+.reward-card .rbody{ flex:1;min-width:0 }
+.reward-card .rname{ font-weight:800;font-size:15px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis }
+.reward-card .rdesc{ font-size:12.5px;color:var(--ink-500);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis }
+.reward-card .rtags{ margin-top:6px;display:flex;flex-wrap:wrap }
+.reward-card .rchev{ color:var(--ink-400);font-size:22px;flex:none;font-weight:600 }
+.view-all{ display:flex;align-items:center;justify-content:center;gap:6px;width:100%;background:transparent;border:0;
+  color:var(--link);font-family:inherit;font-weight:700;font-size:14px;cursor:pointer;padding:12px 10px 4px }
+
+/* ===== Reference Design 2.0 — Shop (spend benefits) ===== */
+.shop-title{ font-size:28px; font-weight:800; letter-spacing:-.02em; line-height:1.15; margin:6px 2px 18px }
+.seg-toggle{ display:flex; background:var(--cream-warm); border-radius:var(--r-pill); padding:5px; gap:4px; margin:0 2px 20px }
+.seg-toggle button{ flex:1; border:0; background:transparent; border-radius:var(--r-pill); padding:11px 0; font-family:inherit;
+  font-weight:700; font-size:14.5px; color:var(--ink-500); cursor:pointer; transition:all var(--dur) var(--ease) }
+.seg-toggle button.on{ background:var(--brand); color:#fff; box-shadow:var(--shadow-card) }
+.shop-using{ font-size:15px; font-weight:700; margin:4px 2px 10px }
+.benefit-row{ padding:16px 4px }
+.benefit-row+.benefit-row{ border-top:1px solid var(--line-faint) }
+.benefit-row .br-top{ display:flex;align-items:center;justify-content:space-between;gap:10px }
+.benefit-row .br-name{ font-weight:800;font-size:15.5px;color:var(--brand-2) }
+.benefit-row .br-amt{ font-weight:800;font-size:15.5px;white-space:nowrap }
+.benefit-row .br-desc{ font-size:13.5px;color:var(--ink-500);margin-top:8px;line-height:1.45 }
+.partner-carousel{ display:flex;gap:10px;overflow-x:auto;padding:4px 2px 12px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch }
+.partner-carousel::-webkit-scrollbar{display:none}
+.partner-chip{ flex:none;width:128px;height:84px;scroll-snap-align:start;background:var(--paper);border:1px solid var(--line-faint);
+  border-radius:var(--r-lg);box-shadow:var(--shadow-card);display:grid;place-items:center;font-weight:800;color:var(--brand-2);font-size:15px;text-align:center;padding:0 8px }
+
+/* ===== Cash Back CTA (link-out to the separate Cash Back site) ===== */
+.cb-cta{ display:flex;gap:14px;align-items:center;background:var(--paper);border:1px solid var(--line-soft);
+  border-radius:var(--r-lg);box-shadow:var(--shadow-card);padding:16px;cursor:pointer;text-decoration:none;color:inherit;
+  transition:all var(--dur) var(--ease) }
+.cb-cta:hover{ box-shadow:var(--shadow-md);transform:translateY(-1px) }
+.cb-cta .cb-ic{ width:48px;height:48px;flex:none;border-radius:14px;display:grid;place-items:center;font-size:24px;
+  background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff }
+.cb-cta .cb-body{ flex:1;min-width:0 }
+.cb-cta .cb-t{ font-weight:800;font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap }
+.cb-cta .cb-ext{ font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--action) }
+.cb-cta .cb-d{ font-size:12.5px;color:var(--ink-500);margin-top:3px;line-height:1.4 }
+.cb-cta .cb-chev{ color:var(--ink-400);font-size:20px;flex:none }
 </style>
 
 <script>
@@ -512,10 +563,6 @@ body.cashback-only .appbar .iconbtn{color:#fff}
           <div><div class="title">Over-the-counter</div><div class="sub">$75/yr max rewards</div></div>
           <div style="display:flex;align-items:center"><span class="amt"><sup>$</sup>75.00</span><span class="chev">›</span></div>
         </div>
-        <div class="reward-row" data-goto="shop">
-          <div><div class="title">Cash back</div><div class="sub">Brand-funded · separate from plan</div></div>
-          <div style="display:flex;align-items:center"><span class="amt"><sup>$</sup><span id="cbPurse">0.00</span></span><span class="chev">›</span></div>
-        </div>
       </div>
 
       <div style="height:14px"></div>
@@ -527,61 +574,122 @@ body.cashback-only .appbar .iconbtn{color:#fff}
 
       <div style="height:16px"></div>
       <div class="promo">
-        <h3>Your $10 family wellness credit is ticking</h3>
-        <p>Grab the kids' gummy vitamins (or something for you) before Apr 30 — then see what else your points unlock.</p>
-        <button class="btn btn-light" data-goto="shop">Claim now ›</button>
-        <span class="emoji">🧸</span>
+        <h3>You have a $10 credit for diabetes care essentials</h3>
+        <p>Use it on foot-care cream or test strips by Apr 30. We can mail your order or place it for you by phone — no need to ask.</p>
+        <span class="emoji">🧴</span>
       </div>
 
-      <div class="section-label">Cash back</div>
-      <a class="card pad" id="cashbackSiteCard" href="design_preview_noclip.html?view=cashback" style="display:flex;gap:14px;align-items:center;text-decoration:none;color:inherit;border:1px solid var(--line-soft)">
-        <div style="width:46px;height:46px;flex:none;border-radius:12px;display:grid;place-items:center;font-size:24px;background:var(--brand-2);color:#fff">🧾</div>
-        <div style="flex:1">
-          <div style="font-weight:800;display:flex;align-items:center;gap:8px;flex-wrap:wrap">Cash Back
-            <span style="font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--action)">Separate site ↗</span></div>
-          <div class="small muted" style="margin-top:3px">Browse offers and submit receipts on our dedicated Cash Back page — opens outside the app.</div>
+      <div class="section-label">Cash Back</div>
+      <a class="cb-cta cashback-link" href="design_preview_noclip.html?view=cashback">
+        <div class="cb-ic">💵</div>
+        <div class="cb-body">
+          <div class="cb-t">Earn Cash Back on everyday brands <span class="cb-ext">Separate site ↗</span></div>
+          <div class="cb-d">Get money back when you buy participating products. Opens our dedicated Cash Back site.</div>
         </div>
-        <span class="chev" style="color:var(--ink-400)">›</span>
+        <span class="cb-chev">›</span>
       </a>
-
-      <div class="section-label">Your featured rewards</div>
-      <div class="hscroll">
-        <div class="feat"><div class="tile"><sup>$</sup>10</div><div><div class="ttl">Claim Your $10 Family Wellness Credit</div><span class="tag">Offer</span><span class="tag warn">Expires Apr 30</span></div></div>
-        <div class="feat"><div class="tile" style="background:#7C5CBF"><sup>$</sup>15</div><div><div class="ttl">14-day mood check-in challenge</div><span class="tag gray">Behavioral Health</span></div></div>
-        <div class="feat"><div class="tile" style="background:var(--success)"><sup>$</sup>10</div><div><div class="ttl">Are You on Track for Retirement?</div><span class="tag gray">Financial Wellness</span></div></div>
-        <div class="feat"><div class="tile" style="background:#7C5CBF"><sup>$</sup>15</div><div><div class="ttl">14-day "I" affirmation challenge</div><span class="tag gray">Behavioral Health</span></div></div>
-      </div>
     </section>
 
     <!-- ================= EARN ================= -->
     <section class="tab-panel" id="tab-earn">
-      <h1 class="page">Ways to earn</h1>
-      <div class="cashback-strip">
-        <div><div class="lab">Earned this year</div><div class="num">$10.00</div></div>
-        <button class="btn btn-light" data-goto="shop">Earn cashback ›</button>
+      <div class="earn-head">
+        <span class="big"><sup>$</sup>10</span><span class="lab">earned</span>
       </div>
-      <div class="section-label">Healthy actions</div>
-      <div class="card">
-        <div class="earn-item"><div class="ico">💧</div><div class="body"><div class="t">Drink water daily</div><div class="d">Log 8 glasses · daily streak</div></div><span class="pill-amt">+$1</span></div>
-        <div class="earn-item"><div class="ico">🧠</div><div class="body"><div class="t">14-day mood check-in</div><div class="d">Behavioral Health · this month</div></div><span class="pill-amt">+$15</span></div>
-        <div class="earn-item"><div class="ico">💪</div><div class="body"><div class="t">Daily affirmation challenge</div><div class="d">Behavioral Health · this month</div></div><span class="pill-amt">+$15</span></div>
-        <div class="earn-item"><div class="ico">🩺</div><div class="body"><div class="t">Complete annual wellness visit</div><div class="d">Preventive care</div></div><span class="pill-amt">+$25</span></div>
-      </div>
-      <div class="section-label">Buy &amp; earn</div>
-      <div class="card pad">
-        <div style="display:flex;gap:14px;align-items:center">
-          <div style="font-size:34px">🧾</div>
-          <div style="flex:1">
-            <div style="font-weight:700">Cash back on everyday buys</div>
-            <div class="small muted" style="margin-top:3px">Scan receipts for OTC, vitamins &amp; healthy food and we'll credit your card.</div>
-          </div>
+      <div class="bar" style="margin:0 2px"><i style="width:5%"></i></div>
+      <div class="bar-ends" style="margin:6px 2px 0"><span>$0</span><span>$200</span></div>
+
+      <div class="section-label" style="margin-top:22px">Your featured rewards</div>
+
+      <div class="reward-card">
+        <div class="rb"><sup>$</sup>10</div>
+        <div class="rbody">
+          <div class="rname">Claim Your $10 Diabetes Care Essentials Credit</div>
+          <div class="rdesc">Diabetes care essentials</div>
+          <div class="rtags"><span class="tag gray">Offer</span><span class="tag gray">Expires Apr 30</span></div>
         </div>
-        <button class="btn btn-primary btn-block" style="margin-top:14px" data-goto="shop">Go to Shop</button>
+        <span class="rchev">›</span>
+      </div>
+      <div class="reward-card">
+        <div class="rb"><sup>$</sup>20</div>
+        <div class="rbody">
+          <div class="rname">Complete your next ABC Health visit</div>
+          <div class="rdesc">Condition Management</div>
+          <div class="rtags"><span class="tag gray">Condition Management</span><span class="tag gray">~5 min</span></div>
+        </div>
+        <span class="rchev">›</span>
+      </div>
+      <div class="reward-card">
+        <div class="rb"><sup>$</sup>50</div>
+        <div class="rbody">
+          <div class="rname">Hinge Health Exercise</div>
+          <div class="rdesc">Personalized exercise plan</div>
+          <div class="rtags"><span class="tag gray">Wellness</span><span class="tag gray">One time</span></div>
+        </div>
+        <span class="rchev">›</span>
+      </div>
+      <div class="reward-card">
+        <div class="rb"><sup>$</sup>20</div>
+        <div class="rbody">
+          <div class="rname">Ease Shoulder Pain</div>
+          <div class="rdesc">Condition Management</div>
+          <div class="rtags"><span class="tag gray">Condition Management</span><span class="tag gray">~5 min</span></div>
+        </div>
+        <span class="rchev">›</span>
+      </div>
+
+      <button class="view-all">View all ⌄</button>
+    </section>
+
+    <!-- ================= SHOP (spend benefits & rewards) ================= -->
+    <section class="tab-panel" id="tab-shop">
+      <h1 class="shop-title">Spend your benefits<br>and rewards</h1>
+
+      <div class="seg-toggle" id="shopToggle">
+        <button class="on" data-shop="inperson">In person</button>
+        <button data-shop="online">Shop online</button>
+      </div>
+
+      <div class="shop-using">Shop using your:</div>
+      <div class="card">
+        <div class="benefit-row">
+          <div class="br-top"><span class="br-name">2026 Rewards</span><span class="br-amt">$10.00</span></div>
+          <div class="br-desc">Shop and spend your rewards at many places near you</div>
+        </div>
+        <div class="benefit-row">
+          <div class="br-top"><span class="br-name">Over-the-counter</span><span class="br-amt">$75.00</span></div>
+          <div class="br-desc">Shop for OTC and food items or you may be eligible to spend on other benefits</div>
+        </div>
+      </div>
+
+      <div id="shopOnlineExtra" class="hidden" style="margin-top:18px">
+        <div class="shop-using">Featured retailers</div>
+        <div class="partner-carousel">
+          <div class="partner-chip">CVS Pharmacy</div>
+          <div class="partner-chip">Walmart</div>
+          <div class="partner-chip">Walgreens</div>
+          <div class="partner-chip">Amazon</div>
+          <div class="partner-chip">Kroger</div>
+        </div>
+      </div>
+
+      <div class="section-label" style="margin-top:20px">Earn more</div>
+      <a class="cb-cta cashback-link" href="design_preview_noclip.html?view=cashback">
+        <div class="cb-ic">💵</div>
+        <div class="cb-body">
+          <div class="cb-t">Cash Back on everyday brands <span class="cb-ext">Separate site ↗</span></div>
+          <div class="cb-d">Buy participating products and get money back. Opens our dedicated Cash Back site.</div>
+        </div>
+        <span class="cb-chev">›</span>
+      </a>
+
+      <div class="footer-legal">
+        The ABC Health rewards Visa® prepaid card is issued by The Bancorp Bank, N.A., pursuant to a license from Visa U.S.A. Inc. and may not be used everywhere Visa debit cards are accepted.<br>
+        Reward earnings are taxable. It is a member's responsibility to report the reward amounts earned when they file their tax return.
       </div>
     </section>
 
-    <!-- ================= SHOP (CPG cashback) ================= -->
-    <section class="tab-panel" id="tab-shop">
+    <!-- ================= CASH BACK (standalone site, reached via ?view=cashback) ================= -->
+    <section class="tab-panel" id="tab-cashback">
       <h1 class="page">Cash back on everyday buys</h1>
       <p class="muted" style="margin:0 2px 12px;font-size:13px;line-height:1.4">Scan your receipt to get cash back on everyday items you buy.</p>
 
@@ -795,8 +903,7 @@ document.querySelectorAll("[data-goto]").forEach(el=>{
 function switchTab(name){
   document.querySelectorAll(".seg-tab").forEach(t=>t.classList.toggle("active",t.dataset.tab===name));
   document.querySelectorAll(".tab-panel").forEach(p=>p.classList.toggle("active",p.id==="tab-"+name));
-  const fw=document.getElementById("fabWrap"); if(fw) fw.style.display=(name==="shop")?"flex":"none";
-  if(name==="shop") maybeShowDisclosure();
+  const fw=document.getElementById("fabWrap"); if(fw) fw.style.display=(name==="cashback")?"flex":"none";
   $("main")?.scrollTo?.(0,0);
   document.querySelector("main").scrollTop = 0;
 }
@@ -915,7 +1022,7 @@ function renderCart(){
   const body=$("cartBody"); if(!body) return;
   if(!all.length){
     body.innerHTML=`<div class="cart-empty">No offers clipped yet.<br>Browse offers and tap “Clip” to add them here.</div>
-      <button class="btn btn-primary btn-block" onclick="closeCart();switchTab('shop')">Browse offers</button>`;
+      <button class="btn btn-primary btn-block" onclick="closeCart();switchTab('cashback')">Browse offers</button>`;
     return;
   }
   const total=all.reduce((s,o)=>s+offerMaxCash(o),0);
@@ -934,13 +1041,15 @@ const disclosureScrim=$("disclosureScrim");
 const DISCLOSURE_DEFAULT="Got it — show me the offers";
 let pendingNav=null;   // set when the disclosure is gating a link-out to the Cash Back site
 function maybeShowDisclosure(){ if(!shopDisclosureShown){ shopDisclosureShown=true; $("disclosureOk").textContent=DISCLOSURE_DEFAULT; $("discThirdParty").style.display="none"; disclosureScrim.classList.add("open"); } }
-// Link-out card: show the plan-disassociation disclosure (incl. third-party site notice) first, then navigate.
-$("cashbackSiteCard").addEventListener("click",e=>{
-  e.preventDefault();
-  pendingNav=$("cashbackSiteCard").getAttribute("href");
-  $("discThirdParty").style.display="block";
-  $("disclosureOk").textContent="Got it — continue to Cash Back ›";
-  disclosureScrim.classList.add("open");
+// Link-out cards: show the plan-disassociation disclosure (incl. third-party site notice) first, then navigate.
+document.querySelectorAll(".cashback-link").forEach(link=>{
+  link.addEventListener("click",e=>{
+    e.preventDefault();
+    pendingNav=link.getAttribute("href");
+    $("discThirdParty").style.display="block";
+    $("disclosureOk").textContent="Got it — continue to Cash Back ›";
+    disclosureScrim.classList.add("open");
+  });
 });
 $("disclosureOk").addEventListener("click",()=>{
   disclosureScrim.classList.remove("open");
@@ -1192,7 +1301,7 @@ function showReceiptResult(d){
       <div class="result-hero"><div class="rj">🔍</div><div class="rt">No eligible items found</div>
         <div class="rd">We read your receipt but didn't find any products matching an active cash back offer.</div></div>
       ${rxSummaryHtml(d)}
-      <button class="btn btn-primary btn-block" style="margin-top:14px" onclick="closeReceiptDone();switchTab('shop')">View active offers</button>
+      <button class="btn btn-primary btn-block" style="margin-top:14px" onclick="closeReceiptDone();switchTab('cashback')">View active offers</button>
       <button class="btn btn-ghost btn-block" style="margin-top:10px" onclick="closeReceiptDone()">Done</button>`;
     return;
   }
@@ -1450,6 +1559,18 @@ function openStore(id){
     '<a class="iconbtn" href="design_preview_noclip.html" aria-label="Back to app" style="text-decoration:none;font-size:24px;font-weight:800">&#8249;</a>'
     +'<div class="brand"><span class="spark">&#10022;</span> Healthier Together</div>'
     +'<span style="width:40px;height:40px"></span>';
-  switchTab("shop");
+  switchTab("cashback");
+})();
+
+/* ---------- Shop: In person / Shop online toggle ---------- */
+(function(){
+  const tog=document.getElementById("shopToggle"); if(!tog) return;
+  const extra=document.getElementById("shopOnlineExtra");
+  tog.querySelectorAll("button").forEach(b=>{
+    b.addEventListener("click",()=>{
+      tog.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
+      if(extra) extra.classList.toggle("hidden", b.dataset.shop!=="online");
+    });
+  });
 })();
 </script>
