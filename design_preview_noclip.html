@@ -563,6 +563,10 @@ body.cashback-only .appbar .iconbtn{color:#fff}
           <div><div class="title">Over-the-counter</div><div class="sub">$75/yr max rewards</div></div>
           <div style="display:flex;align-items:center"><span class="amt"><sup>$</sup>75.00</span><span class="chev">›</span></div>
         </div>
+        <a class="reward-row cashback-link" href="design_preview_noclip.html?view=cashback" style="text-decoration:none;color:inherit">
+          <div><div class="title">Healthier Together Rewards</div><div class="sub">Brand-funded · separate from plan</div></div>
+          <div style="display:flex;align-items:center"><span class="amt"><sup>$</sup><span id="cbPurse">0.00</span></span><span class="chev">›</span></div>
+        </a>
       </div>
 
       <div style="height:14px"></div>
@@ -838,7 +842,7 @@ const state = {
   cashbackPending: 0.00,
   offers: [],
   submissions: [
-    { icon:"🧾", store:"CVS Pharmacy", detail:"Centrum Silver · $3.00 in rewards", when:"2 days ago", status:"credited", label:"Credited" },
+    { icon:"🧾", store:"CVS Pharmacy", detail:"Centrum Silver · $3.00 back", when:"2 days ago", status:"credited", label:"Credited" },
     { icon:"🧾", store:"Walmart Supercenter", detail:"Under review — up to 24 hrs", when:"Yesterday", status:"pending", label:"Pending review" },
     { icon:"🧾", store:"Giant Food", detail:"No eligible items found", when:"4 days ago", status:"declined", label:"Declined" },
     { icon:"🧾", store:"Costco Wholesale", detail:"Reversed — duplicate receipt", when:"1 wk ago", status:"clawed", label:"Clawed back" },
@@ -933,7 +937,7 @@ function renderStrip(){
 function cbDisplay(o){
   const amts=(o.sizes&&o.sizes.length?o.sizes.map(s=>Number(s.cashback)):[Number(o.cashback)]);
   const max=Math.max(...amts), min=Math.min(...amts);
-  return (max!==min) ? "Up to "+money(max)+" in rewards" : money(max)+" in rewards";
+  return (max!==min) ? "Up to "+money(max)+" back" : money(max)+" back";
 }
 const CAT_LABEL={otc:"OTC", grocery:"Grocery", "food-and-produce":"Food & Produce"};
 function renderFilters(){
@@ -966,7 +970,7 @@ function renderOffers(){
       <div class="ic">${o.image?`<img src="${esc(o.image)}" alt="${esc(o.product||"")}">`:(o.icon||"🛒")}</div>
       <div class="brand-n">${esc(o.brand||"")}</div>
       <div class="prod">${esc(o.product||"")}</div>
-      <div class="cb">${ex?money(o.cashback)+" in rewards":cbDisplay(o)}</div>
+      <div class="cb">${ex?money(o.cashback)+" back":cbDisplay(o)}</div>
       <div class="exp">${ex?"Budget exhausted":(o.expires?("Expires "+fmtExp(o.expires)):"")}</div>
     </div>`;
   }).join("");
@@ -986,7 +990,7 @@ function renderFeatured(){
       <div class="fb-name">${esc(o.product||"")}</div>
       ${o.tagline?`<div class="fb-tagline">${esc(o.tagline)}</div>`:""}
     </div>
-    <div class="fb-cb">${cbDisplay(o).replace(" in rewards","")}<span>in rewards</span></div>
+    <div class="fb-cb">${cbDisplay(o).replace(" back","")}<span>back</span></div>
   </div>`;
   el.querySelector(".feat-banner").addEventListener("click",()=>openOffer(o.campaign_id));
 }
@@ -1018,7 +1022,7 @@ function renderCart(){
   body.innerHTML = all.map(o=>`<div class="cart-row">
       <div class="ci">${o.icon||"🏷️"}</div>
       <div><div class="cn">${esc(o.product)}</div><div class="cm">${esc(o.brand||"")}${o.expires?" · exp "+fmtExp(o.expires):""}</div></div>
-      <div class="cc">${cbDisplay(o).replace(" in rewards","")}</div>
+      <div class="cc">${cbDisplay(o).replace(" back","")}</div>
       <button class="cx" title="Unclip" onclick="toggleClip('${esc(o.campaign_id)}')">✕</button>
     </div>`).join("")
     + `<div class="cart-total"><span>Potential rewards</span><span class="amt">up to ${money(total)}</span></div>
@@ -1350,7 +1354,7 @@ function renderRxResult(){
         <div class="rx-sub">Matched by product name. Scan each barcode to confirm and claim its reward.${credited.length?` ${money(creditedCash)} already credited.`:""}</div></div>`
     : `<div class="rx-hero"><div class="rx-badge">✓</div>
         <div class="rx-amt">+${money(creditedCash)}</div>
-        <div class="rx-lab">in rewards added to your card</div>
+        <div class="rx-lab">back added to your card</div>
         <div class="rx-sub">New balance ${money(state.balance)}</div></div>`;
   const foot = `<div class="rx-foot">${esc(rx.vendor)} · ${esc(rx.raw.date?String(rx.raw.date).slice(0,10):"—")} · ${Array.isArray(rx.raw.line_items)?rx.raw.line_items.length:0} items read</div>
       <details style="margin-top:8px"><summary>View raw OCR JSON</summary><pre>${esc(JSON.stringify(rx.raw,null,2))}</pre></details>`;
@@ -1391,7 +1395,7 @@ window.finishRx=function(){
     const declined=currentRx.items.filter(i=>i.status==="toverify");
     declined.forEach(i=>i.status="declined");
     const cash=credited.reduce((s,i)=>s+i.cashback,0);
-    if(credited.length) state.submissions.unshift({icon:"🧾",store:currentRx.vendor,detail:`${[...new Set(credited.map(i=>i.offer.brand))].join(", ")} · ${money(cash)} in rewards`,when:"Just now",status:"credited",label:"Credited"});
+    if(credited.length) state.submissions.unshift({icon:"🧾",store:currentRx.vendor,detail:`${[...new Set(credited.map(i=>i.offer.brand))].join(", ")} · ${money(cash)} back`,when:"Just now",status:"credited",label:"Credited"});
     if(declined.length) state.submissions.unshift({icon:"🧾",store:currentRx.vendor,detail:`${declined.length} item(s) couldn't be verified`,when:"Just now",status:"declined",label:"Declined"});
     renderSubs();
   }
@@ -1424,7 +1428,7 @@ function checkUpc(upc){
       const ex = false;
       scanResult.innerHTML=`
         <div class="result-hero" style="padding-top:8px"><div class="rj">${ex?"⌛":"✅"}</div>
-          <div class="rt">${ex?"Offer fully claimed":money(d.cashback)+" in rewards"}</div>
+          <div class="rt">${ex?"Offer fully claimed":money(d.cashback)+" back"}</div>
           <div class="rd">${esc(d.product||"")}</div></div>
         ${ex
           ? `<div class="banner warn">This campaign's budget is exhausted — the offer is no longer available.</div>`
