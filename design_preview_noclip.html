@@ -22,7 +22,6 @@
     --shadow-md:0 4px 12px rgba(20,20,23,.08),0 2px 4px rgba(20,20,23,.04);
     --shadow-pop:0 10px 30px rgba(20,20,23,.12),0 2px 8px rgba(20,20,23,.08);
     --ease:cubic-bezier(.22,1,.36,1); --dur:220ms;
-    --app-h:100dvh;   /* JS refines this to window.innerHeight for reliable iOS Safari sizing */
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;height:100%}
@@ -372,11 +371,18 @@
    the bottom browser bar). dvh handles mobile browser chrome. */
 .previewbg .device{width:100%;max-width:480px;margin:0;border-radius:0;
   height:100vh;min-height:100vh;max-height:100vh;
-  height:100dvh;min-height:100dvh;max-height:100dvh;
-  height:var(--app-h);min-height:var(--app-h);max-height:var(--app-h)}
-/* Phones: lock the page so only the in-app content scrolls (prevents the iOS
-   Safari "tall viewport on load -> bottom bar cut off, no scroll" glitch). */
-@media(max-width:599px){ html,body{height:100%;overflow:hidden} }
+  height:100dvh;min-height:100dvh;max-height:100dvh}
+/* Phones: scroll the document naturally and pin the action bar with position:fixed,
+   so the app shell never depends on 100vh/100dvh — which iOS Safari mis-measures on
+   first paint (the cause of the load-time cut-off / no-scroll / zoom glitch). */
+@media(max-width:599px){
+  html,body{ height:auto; overflow:visible; }
+  .previewbg{ display:block; min-height:100dvh; padding:0; }
+  .previewbg .device{ height:auto; min-height:100dvh; max-height:none; overflow:visible; }
+  main{ overflow:visible; }
+  body.cashback-only .action-bar{ position:fixed; left:0; right:0; bottom:0; z-index:30; }
+  body.cashback-only main{ padding-bottom:92px; }
+}
 @media(min-width:600px){
   .previewbg{padding:24px 12px}
   .previewbg .device{max-width:760px;border-radius:24px;
@@ -576,18 +582,6 @@ body.cashback-only .action-bar{ display:flex }
     if(u===USER && p===PASS){ try{sessionStorage.setItem('cpgDemoAuth','1');}catch(e){} unlock(); }
     else{ document.getElementById('agErr').textContent='Incorrect username or password.'; }
   });
-})();
-</script>
-<script>
-/* iOS Safari fix: size the app to the actual visible viewport (window.innerHeight
-   reflects the current toolbar state) rather than 100vh, which iOS measures against
-   the tall toolbar-collapsed viewport on first paint. */
-(function(){
-  function setAppH(){ document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px'); }
-  setAppH();
-  window.addEventListener('resize', setAppH);
-  window.addEventListener('orientationchange', setAppH);
-  if(window.visualViewport) window.visualViewport.addEventListener('resize', setAppH);
 })();
 </script>
 <div class="previewbg">
