@@ -404,10 +404,24 @@ body.cashback-only .appbar .iconbtn{color:#fff}
 .benefit-row .br-name{ font-weight:800;font-size:15.5px;color:var(--brand-2) }
 .benefit-row .br-amt{ font-weight:800;font-size:15.5px;white-space:nowrap }
 .benefit-row .br-desc{ font-size:13.5px;color:var(--ink-500);margin-top:8px;line-height:1.45 }
-.partner-carousel{ display:flex;gap:10px;overflow-x:auto;padding:4px 2px 12px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch }
-.partner-carousel::-webkit-scrollbar{display:none}
-.partner-chip{ flex:none;width:128px;height:84px;scroll-snap-align:start;background:var(--paper);border:1px solid var(--line-faint);
-  border-radius:var(--r-lg);box-shadow:var(--shadow-card);display:grid;place-items:center;font-weight:800;color:var(--brand-2);font-size:15px;text-align:center;padding:0 8px }
+/* Shop online — "use your rewards online" carousel */
+.sc-viewport{ overflow:hidden;border-radius:var(--r-lg) }
+.sc-track{ display:flex;transition:transform .35s var(--ease) }
+.sc-card{ flex:0 0 100%;box-sizing:border-box;background:var(--paper);border:1px solid var(--line-faint);
+  border-radius:var(--r-lg);box-shadow:var(--shadow-card);overflow:hidden }
+.sc-img{ height:120px;background:linear-gradient(135deg,var(--brand),var(--brand-2));display:grid;place-items:center;font-size:48px }
+.sc-body{ padding:16px }
+.sc-title{ font-size:16px;font-weight:800;line-height:1.2 }
+.sc-desc{ font-size:13px;color:var(--ink-500);margin-top:6px;line-height:1.45 }
+.sc-actions{ margin-top:14px;display:flex;flex-direction:column;gap:8px }
+.sc-terms{ background:transparent;border:0;color:var(--link);font-family:inherit;font-weight:700;font-size:13px;cursor:pointer;padding:4px }
+.sc-nav{ display:flex;align-items:center;justify-content:center;gap:16px;margin-top:14px }
+.sc-arrow{ width:38px;height:38px;border-radius:var(--r-pill);border:1px solid var(--line-soft);background:var(--paper);
+  display:grid;place-items:center;cursor:pointer;color:var(--ink-700);box-shadow:var(--shadow-card);font-size:20px;font-weight:700;line-height:1 }
+.sc-arrow:hover{ background:var(--cream-warm) }
+.sc-dots{ display:flex;gap:7px;align-items:center }
+.sc-dot{ width:8px;height:8px;border-radius:50%;background:var(--line);border:0;padding:0;cursor:pointer;transition:all var(--dur) var(--ease) }
+.sc-dot.on{ background:var(--brand-2);width:22px;border-radius:5px }
 
 /* ===== Cash Back CTA (link-out to the separate Cash Back site) ===== */
 .cb-cta{ display:flex;gap:14px;align-items:center;background:var(--paper);border:1px solid var(--line-soft);
@@ -662,6 +676,56 @@ body.cashback-only .appbar .iconbtn{color:#fff}
         <div class="benefit-row">
           <div class="br-top"><span class="br-name">Over-the-counter</span><span class="br-amt">$75.00</span></div>
           <div class="br-desc">Shop for OTC and food items or you may be eligible to spend on other benefits</div>
+        </div>
+        <a class="benefit-row cashback-link" href="design_preview_noclip.html?view=cashback" style="display:block;text-decoration:none;color:inherit">
+          <div class="br-top"><span class="br-name">Healthier Together Rewards</span><span class="br-amt"><sup style="font-size:11px;top:-.5em">$</sup><span id="cbPurseShop">0.00</span></span></div>
+          <div class="br-desc">Earn money back on participating brands. Opens our separate Rewards site.</div>
+        </a>
+      </div>
+
+      <!-- Shop online: carousel of ways to use rewards online (matches reference) -->
+      <div id="shopOnline" class="hidden">
+        <div class="shop-using" style="margin-top:20px">Use your rewards online</div>
+        <div class="sc-viewport">
+          <div class="sc-track" id="scTrack">
+            <div class="sc-card">
+              <div class="sc-img">🛒</div>
+              <div class="sc-body">
+                <div class="sc-title">Get a Costco Shop Card</div>
+                <div class="sc-desc">ABC Health members can use their rewards to join Costco. Enroll in auto-renewal and receive a Digital Costco Shop Card — worth $40 with a new Executive Membership or $20 with a new Gold Star Membership.</div>
+                <div class="sc-actions"><button class="btn btn-primary btn-block">Continue to Costco</button><button class="sc-terms">Terms and Conditions</button></div>
+              </div>
+            </div>
+            <div class="sc-card">
+              <div class="sc-img">🏋️</div>
+              <div class="sc-body">
+                <div class="sc-title">Save on fitness and wellness</div>
+                <div class="sc-desc">Use your rewards toward a One Pass Select fitness plan from Optum. Choose from flexible membership tiers and enjoy nationwide gym access plus on-demand classes.</div>
+                <div class="sc-actions"><button class="btn btn-primary btn-block">Explore plans</button><button class="sc-terms">Terms and Conditions</button></div>
+              </div>
+            </div>
+            <div class="sc-card">
+              <div class="sc-img">💳</div>
+              <div class="sc-body">
+                <div class="sc-title">Shop online with your rewards</div>
+                <div class="sc-desc">Pay with your card at checkout, just like you would with a debit card. Some places don't allow split payments, so your rewards balance may need to cover the full amount.</div>
+                <div class="sc-actions"><button class="btn btn-primary btn-block">How it works</button></div>
+              </div>
+            </div>
+            <div class="sc-card">
+              <div class="sc-img">🦵</div>
+              <div class="sc-body">
+                <div class="sc-title">Struggling with joint or muscle pain?</div>
+                <div class="sc-desc">Get access to a personalized exercise program and dedicated care team. Unlimited exercises and stretches developed for you by physical therapists to reduce pain.</div>
+                <div class="sc-actions"><button class="btn btn-primary btn-block">Get started</button><button class="sc-terms">Terms and Conditions</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="sc-nav">
+          <button class="sc-arrow" id="scPrev" aria-label="Previous">‹</button>
+          <div class="sc-dots" id="scDots"></div>
+          <button class="sc-arrow" id="scNext" aria-label="Next">›</button>
         </div>
       </div>
 
@@ -933,6 +997,7 @@ function renderStrip(){
   $("cbPending").textContent = money(state.cashbackPending);
   $("balance").textContent = state.balance.toFixed(2);
   const cbp=$("cbPurse"); if(cbp) cbp.textContent = state.cashbackEarned.toFixed(2);
+  const cbps=$("cbPurseShop"); if(cbps) cbps.textContent = state.cashbackEarned.toFixed(2);
 }
 function cbDisplay(o){
   const amts=(o.sizes&&o.sizes.length?o.sizes.map(s=>Number(s.cashback)):[Number(o.cashback)]);
@@ -1558,12 +1623,26 @@ function openStore(id){
 /* ---------- Shop: In person / Shop online toggle ---------- */
 (function(){
   const tog=document.getElementById("shopToggle"); if(!tog) return;
-  const extra=document.getElementById("shopOnlineExtra");
+  const online=document.getElementById("shopOnline");
   tog.querySelectorAll("button").forEach(b=>{
     b.addEventListener("click",()=>{
       tog.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
-      if(extra) extra.classList.toggle("hidden", b.dataset.shop!=="online");
+      if(online) online.classList.toggle("hidden", b.dataset.shop!=="online");
     });
   });
+})();
+
+/* ---------- Shop online: "use your rewards online" carousel ---------- */
+(function(){
+  const track=document.getElementById("scTrack"); if(!track) return;
+  const cards=[...track.children]; let idx=0;
+  const dotsWrap=document.getElementById("scDots");
+  const dots=cards.map((_,i)=>{ const b=document.createElement("button");
+    b.className="sc-dot"+(i===0?" on":""); b.setAttribute("aria-label","Slide "+(i+1));
+    b.addEventListener("click",()=>go(i)); dotsWrap.appendChild(b); return b; });
+  function go(i){ idx=(i+cards.length)%cards.length; track.style.transform="translateX("+(-idx*100)+"%)";
+    dots.forEach((d,j)=>d.classList.toggle("on",j===idx)); }
+  document.getElementById("scPrev").addEventListener("click",()=>go(idx-1));
+  document.getElementById("scNext").addEventListener("click",()=>go(idx+1));
 })();
 </script>
