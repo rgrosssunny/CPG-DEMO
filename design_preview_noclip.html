@@ -1107,7 +1107,7 @@ function renderFeatured(){
   const dots=cards.map((_,i)=>{ const d=document.createElement("button"); d.className="sc-dot"+(i===0?" on":"");
     d.setAttribute("aria-label","Featured reward "+(i+1)); d.addEventListener("click",()=>{go(i);reset();}); dotsWrap.appendChild(d); return d; });
   function go(i){ idx=(i+cards.length)%cards.length; track.style.transform="translateX("+(-idx*100)+"%)"; dots.forEach((x,j)=>x.classList.toggle("on",j===idx)); }
-  function reset(){ if(window.__featTimer) clearInterval(window.__featTimer); if(cards.length>1) window.__featTimer=setInterval(()=>go(idx+1),3000); }
+  function reset(){ if(window.__featTimer) clearInterval(window.__featTimer); if(cards.length>1) window.__featTimer=setInterval(()=>go(idx+1),5000); }
   $("fcarPrev").addEventListener("click",()=>{go(idx-1);reset();});
   $("fcarNext").addEventListener("click",()=>{go(idx+1);reset();});
   if(window.__featTimer){ clearInterval(window.__featTimer); window.__featTimer=null; }
