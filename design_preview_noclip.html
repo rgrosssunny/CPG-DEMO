@@ -305,6 +305,24 @@
   .rx-deal .rx-cash{ font-weight:800;color:var(--success);font-size:16px;white-space:nowrap }
   .rx-foot{ font-size:11.5px;color:var(--ink-400);text-align:center;margin:12px 2px 0 }
 
+  /* Check-a-product result card */
+  .cp-or{ display:flex;align-items:center;gap:10px;color:var(--ink-400);font-size:12px;font-weight:600;margin:16px 2px }
+  .cp-or::before,.cp-or::after{ content:"";flex:1;height:1px;background:var(--line-soft) }
+  .cp-result{ display:flex;align-items:center;gap:14px;border:1px solid #CFEFD9;background:#F4FCF7;
+    border-radius:var(--r-lg);padding:14px;margin:16px 0 12px }
+  .cp-result.miss{ border-color:var(--line-soft);background:var(--cream) }
+  .cp-img{ width:64px;height:64px;flex:none;border-radius:12px;background:#fff;border:1px solid var(--line-faint);
+    display:grid;place-items:center;overflow:hidden;font-size:30px }
+  .cp-img img{ width:100%;height:100%;object-fit:contain;padding:7px }
+  .cp-info{ flex:1;min-width:0 }
+  .cp-brand{ font-size:11px;font-weight:700;color:var(--ink-400);text-transform:uppercase;letter-spacing:.04em }
+  .cp-name{ font-size:14.5px;font-weight:800;line-height:1.25;margin:2px 0 6px }
+  .cp-elig{ display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:800;color:var(--success) }
+  .cp-cash{ flex:none;text-align:center;background:var(--success);color:#fff;border-radius:14px;padding:10px 12px;
+    font-size:18px;font-weight:800;line-height:1 }
+  .cp-cash span{ display:block;font-size:10px;font-weight:700;opacity:.92;margin-top:2px;text-transform:uppercase }
+  .cp-hint{ font-size:13px;color:var(--ink-500);text-align:center;margin:0 4px 14px;line-height:1.45 }
+
   .kv{ display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin:10px 0 }
   .kv dt{ color:var(--ink-400);font-size:12px } .kv dd{ margin:0 0 8px;font-weight:700;font-size:14px }
   details{ margin-top:12px } summary{ cursor:pointer;color:var(--link);font-size:13px;font-weight:600 }
@@ -895,18 +913,21 @@ body.cashback-only .action-bar{ display:flex }
   <div class="sheet" id="barcodeSheet">
     <div class="grip"></div>
     <h2 id="barcodeTitle">Check a product</h2>
-    <p class="sub-h" id="barcodeSub">Check a barcode against active offers. Decoding happens in your browser — only the UPC number is sent, never an image.</p>
-    <div id="reader" style="border-radius:var(--r-md);overflow:hidden"></div>
-    <div style="display:flex;gap:10px;margin-top:12px">
-      <button id="scanStart" class="btn btn-primary" style="flex:1;justify-content:center">Start camera</button>
-      <button id="scanStop" class="btn btn-ghost hidden" style="flex:1;justify-content:center">Stop camera</button>
+    <p class="sub-h" id="barcodeSub">Scan a barcode or enter a UPC to see if it earns rewards.</p>
+    <div id="cpInputs">
+      <div id="reader" style="border-radius:var(--r-md);overflow:hidden"></div>
+      <button id="scanStart" class="btn btn-primary btn-block">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5v14M7 5v14M11 5v14M15 5v14M19 5v14M21 5v14"/></svg>
+        Scan a barcode
+      </button>
+      <button id="scanStop" class="btn btn-ghost btn-block hidden" style="margin-top:10px">Stop camera</button>
+      <div class="cp-or">or enter the number</div>
+      <div style="display:flex;gap:8px">
+        <input id="manualUpc" class="upc" inputmode="numeric" placeholder="Enter a UPC" />
+        <button id="manualCheck" class="btn btn-brand">Check</button>
+      </div>
+      <p class="small muted" style="margin-top:8px">Try <b>300450449108</b> or <b>036000291452</b>.</p>
     </div>
-    <p class="small muted" style="margin:16px 2px 6px">No camera? Enter a UPC:</p>
-    <div style="display:flex;gap:8px">
-      <input id="manualUpc" class="upc" inputmode="numeric" placeholder="300450449108" />
-      <button id="manualCheck" class="btn btn-brand">Check</button>
-    </div>
-    <p class="small muted" style="margin-top:8px">Try <b>300450449108</b> (Centrum) or <b>036000291452</b> (Nature Valley).</p>
     <div id="scanResult"></div>
     <button id="closeBarcode" class="btn btn-ghost btn-block" style="margin-top:16px">Close</button>
   </div>
@@ -1499,7 +1520,7 @@ window.startVerify=function(idx){
   $("barcodeTitle").textContent="Verify "+(it.offer.brand||it.offer.product);
   $("barcodeSub").textContent="Scan this product's barcode to confirm your purchase and claim "+money(it.cashback)+".";
   scanResult.innerHTML=`<div class="banner info">Verifying: ${esc(it.offer.product)}${it.size?" ("+esc(it.size)+")":""}</div>`;
-  manualUpc.value=""; barcodeScrim.classList.add("open");
+  cpInputsShow(true); manualUpc.value=""; barcodeScrim.classList.add("open");
 };
 
 function verifyScan(upc){
@@ -1536,8 +1557,10 @@ const barcodeScrim=$("barcodeScrim"), scanStart=$("scanStart"), scanStop=$("scan
       scanResult=$("scanResult"), manualUpc=$("manualUpc"), manualCheck=$("manualCheck");
 let qr=null;
 
-const BARCODE_TITLE="Check a product", BARCODE_SUB="Check a barcode against active offers. Decoding happens in your browser — only the UPC number is sent, never an image.";
-function resetBarcodeMode(){ verifyIdx=null; $("barcodeTitle").textContent=BARCODE_TITLE; $("barcodeSub").textContent=BARCODE_SUB; }
+const BARCODE_TITLE="Check a product", BARCODE_SUB="Scan a barcode or enter a UPC to see if it earns rewards.";
+function cpInputsShow(v){ const i=$("cpInputs"); if(i) i.style.display=v?"":"none"; }
+function resetBarcodeMode(){ verifyIdx=null; $("barcodeTitle").textContent=BARCODE_TITLE; $("barcodeSub").textContent=BARCODE_SUB; cpInputsShow(true); }
+window.cpCheckAnother=function(){ scanResult.innerHTML=""; manualUpc.value=""; cpInputsShow(true); manualUpc.focus(); };
 $("openBarcode").addEventListener("click",()=>{ resetBarcodeMode(); scanResult.innerHTML=""; barcodeScrim.classList.add("open"); });
 $("fabBarcode")?.addEventListener("click",()=>{ resetBarcodeMode(); scanResult.innerHTML=""; barcodeScrim.classList.add("open"); });
 $("closeBarcode").addEventListener("click",closeBarcode);
@@ -1554,23 +1577,32 @@ function checkUpc(upc){
     const m=codes.find(c=>[...upcVariants(c.upc)].some(x=>w.has(x)));
     if(m){ d=Object.assign({eligible:true,scanned_upc:scanned},o); if(m.size){ d.matched_size=m.size; d.cashback=m.cashback; } break; }
   }
-    if(d.eligible){
-      const ex = false;
-      scanResult.innerHTML=`
-        <div class="result-hero" style="padding-top:8px"><div class="rj">${ex?"⌛":"✅"}</div>
-          <div class="rt">${ex?"Offer fully claimed":money(d.cashback)+" back"}</div>
-          <div class="rd">${esc(d.product||"")}</div></div>
-        ${ex
-          ? `<div class="banner warn">This campaign's budget is exhausted — the offer is no longer available.</div>`
-          : `<div class="banner ok">Eligible! Buy it and snap your receipt to claim ${money(d.cashback)}.</div>`}
-        <div class="small muted" style="text-align:center">UPC ${esc(d.scanned_upc)} · ${esc(d.brand||"")} · ${esc(d.campaign_id||"")}</div>
-        ${ex?"":`<button class="btn btn-primary btn-block" style="margin-top:14px" onclick="fromBarcodeToReceipt()">Snap my receipt</button>`}`;
-    }else{
-      scanResult.innerHTML=`
-        <div class="result-hero" style="padding-top:8px"><div class="rj">🔍</div><div class="rt">No active offer</div>
-          <div class="rd">No Rewards offer for UPC ${esc(d.scanned_upc||upc)}.</div></div>
-        <div class="banner info">Browse the featured offers to see what's eligible right now.</div>`;
-    }
+  if(d.eligible){
+    scanResult.innerHTML=`
+      <div class="cp-result">
+        <div class="cp-img">${d.image?`<img src="${esc(d.image)}" alt="">`:(d.icon||"🛒")}</div>
+        <div class="cp-info">
+          <div class="cp-brand">${esc(d.brand||"")}</div>
+          <div class="cp-name">${esc(d.product||"")}</div>
+          <div class="cp-elig"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Eligible for rewards</div>
+        </div>
+        <div class="cp-cash">${money(d.cashback)}<span>back</span></div>
+      </div>
+      <div class="cp-hint">Buy it, then snap your receipt to claim ${money(d.cashback)} back.</div>
+      <button class="btn btn-primary btn-block" onclick="fromBarcodeToReceipt()">Snap my receipt</button>
+      <button class="btn btn-ghost btn-block" style="margin-top:10px" onclick="cpCheckAnother()">Check another product</button>`;
+  }else{
+    scanResult.innerHTML=`
+      <div class="cp-result miss">
+        <div class="cp-img">🔍</div>
+        <div class="cp-info">
+          <div class="cp-name">Not part of a reward</div>
+          <div class="small muted" style="margin-top:3px">UPC ${esc(d.scanned_upc||upc)} doesn't match an active reward right now.</div>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-block" onclick="cpCheckAnother()">Check another product</button>`;
+  }
+  cpInputsShow(false);
 }
 window.fromBarcodeToReceipt=()=>{ closeBarcode().then(()=>openReceipt()); };
 
