@@ -1584,19 +1584,16 @@ function checkUpc(upc){
         <div class="cp-info">
           <div class="cp-brand">${esc(d.brand||"")}</div>
           <div class="cp-name">${esc(d.product||"")}</div>
-          <div class="cp-elig"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Eligible for rewards</div>
+          <div class="cp-elig"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Eligible</div>
         </div>
-        <div class="cp-cash">${money(d.cashback)}<span>back</span></div>
       </div>
-      <div class="cp-hint">Buy it, then snap your receipt to claim ${money(d.cashback)} back.</div>
-      <button class="btn btn-primary btn-block" onclick="fromBarcodeToReceipt()">Snap my receipt</button>
-      <button class="btn btn-ghost btn-block" style="margin-top:10px" onclick="cpCheckAnother()">Check another product</button>`;
+      <button class="btn btn-primary btn-block" onclick="cpCheckAnother()">Check another product</button>`;
   }else{
     scanResult.innerHTML=`
       <div class="cp-result miss">
         <div class="cp-img">🔍</div>
         <div class="cp-info">
-          <div class="cp-name">Not part of a reward</div>
+          <div class="cp-name">Not eligible</div>
           <div class="small muted" style="margin-top:3px">UPC ${esc(d.scanned_upc||upc)} doesn't match an active reward right now.</div>
         </div>
       </div>
