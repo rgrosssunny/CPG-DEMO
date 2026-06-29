@@ -1105,11 +1105,19 @@ function renderFeatured(){
   el.querySelectorAll(".feat-banner[data-cmp]").forEach(b=>b.addEventListener("click",()=>openOffer(b.dataset.cmp)));
   const track=$("fcarTrack"), dotsWrap=$("fcarDots"), cards=[...track.children]; let idx=0;
   const dots=cards.map((_,i)=>{ const d=document.createElement("button"); d.className="sc-dot"+(i===0?" on":"");
-    d.setAttribute("aria-label","Featured reward "+(i+1)); d.addEventListener("click",()=>go(i)); dotsWrap.appendChild(d); return d; });
+    d.setAttribute("aria-label","Featured reward "+(i+1)); d.addEventListener("click",()=>{go(i);reset();}); dotsWrap.appendChild(d); return d; });
   function go(i){ idx=(i+cards.length)%cards.length; track.style.transform="translateX("+(-idx*100)+"%)"; dots.forEach((x,j)=>x.classList.toggle("on",j===idx)); }
-  $("fcarPrev").addEventListener("click",()=>go(idx-1));
-  $("fcarNext").addEventListener("click",()=>go(idx+1));
+  function reset(){ if(window.__featTimer) clearInterval(window.__featTimer); if(cards.length>1) window.__featTimer=setInterval(()=>go(idx+1),3000); }
+  $("fcarPrev").addEventListener("click",()=>{go(idx-1);reset();});
+  $("fcarNext").addEventListener("click",()=>{go(idx+1);reset();});
+  if(window.__featTimer){ clearInterval(window.__featTimer); window.__featTimer=null; }
   if(cards.length<=1){ $("fcarPrev").style.display="none"; $("fcarNext").style.display="none"; dotsWrap.style.display="none"; }
+  else {
+    reset();   // auto-advance every 3s
+    const car=el.querySelector(".fcar");
+    car.addEventListener("mouseenter",()=>{ if(window.__featTimer){ clearInterval(window.__featTimer); window.__featTimer=null; } });
+    car.addEventListener("mouseleave",reset);
+  }
 }
 function renderClipped(){
   const all=[...state.clipped].map(getOffer).filter(Boolean);
