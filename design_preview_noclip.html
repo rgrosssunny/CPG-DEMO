@@ -323,6 +323,15 @@
   .cp-cash span{ display:block;font-size:10px;font-weight:700;opacity:.92;margin-top:2px;text-transform:uppercase }
   .cp-hint{ font-size:13px;color:var(--ink-500);text-align:center;margin:0 4px 14px;line-height:1.45 }
 
+  /* "Missing rewards?" support / submit-a-ticket card */
+  .help-card{ display:flex;align-items:center;gap:14px;background:var(--paper);border:1px solid var(--line-faint);
+    border-radius:var(--r-lg);box-shadow:var(--shadow-card);padding:16px;margin:14px 0 4px }
+  .help-card .hc-ic{ width:52px;height:52px;flex:none;border-radius:14px;display:grid;place-items:center;font-size:26px;background:var(--cream-warm) }
+  .help-card .hc-body{ flex:1;min-width:0 }
+  .help-card .hc-t{ font-weight:800;font-size:15px }
+  .help-card .hc-d{ font-size:13px;color:var(--ink-500);margin-top:3px;line-height:1.45 }
+  .help-card .hc-link{ background:transparent;border:0;padding:0;font:inherit;font-weight:800;color:var(--link);text-decoration:underline;cursor:pointer }
+
   .kv{ display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin:10px 0 }
   .kv dt{ color:var(--ink-400);font-size:12px } .kv dd{ margin:0 0 8px;font-weight:700;font-size:14px }
   details{ margin-top:12px } summary{ cursor:pointer;color:var(--link);font-size:13px;font-weight:600 }
@@ -844,6 +853,14 @@ body.cashback-only .action-bar{ display:flex }
 
       <div class="section-label">Recent submissions</div>
       <div class="card" id="subList"></div>
+
+      <div class="help-card">
+        <div class="hc-ic">🎧</div>
+        <div class="hc-body">
+          <div class="hc-t">Missing rewards?</div>
+          <div class="hc-d">Not to worry, our Care team is here to help. <button class="hc-link" onclick="toast('Support ticket form would open here')">Submit a ticket</button></div>
+        </div>
+      </div>
 
       <div class="footer-legal">
         The ABC Health rewards Visa® prepaid card is issued by The Bancorp Bank, N.A., pursuant to a license from Visa U.S.A. Inc.<br>
