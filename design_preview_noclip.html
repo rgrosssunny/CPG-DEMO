@@ -178,12 +178,11 @@
     background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff;
     border-radius:var(--r-lg);padding:16px;margin:12px 0;box-shadow:var(--shadow-md) }
   .feat-banner:hover{ filter:brightness(1.05) }
-  /* horizontal scroll strip of featured rewards */
-  .feat-scroll{ display:flex; gap:12px; overflow-x:auto; scroll-snap-type:x mandatory;
-    -webkit-overflow-scrolling:touch; margin:12px 0; padding-bottom:4px }
-  .feat-scroll::-webkit-scrollbar{ display:none }
-  .feat-scroll .feat-banner{ flex:0 0 88%; scroll-snap-align:start; margin:0 }
-  @media(min-width:760px){ .feat-scroll .feat-banner{ flex-basis:46% } }
+  /* featured rewards carousel (one card at a time, arrows + dots) */
+  .fcar-vp{ overflow:hidden; margin-top:12px }
+  .fcar-track{ display:flex; transition:transform .35s var(--ease) }
+  .fcar-track .feat-banner{ flex:0 0 100%; margin:0 }
+  .fcar-nav{ display:flex; align-items:center; justify-content:center; gap:16px; margin:12px 0 4px }
   .feat-banner .fb-ic{ width:76px;height:76px;flex:none;border-radius:14px;background:#fff;
     display:grid;place-items:center;font-size:40px;overflow:hidden }
   .feat-banner .fb-ic img{ width:100%;height:100%;object-fit:contain;padding:9px }
@@ -1087,17 +1086,31 @@ function renderFeatured(){
   const el=$("featuredBanner"); if(!el) return;
   const list=FEATURED_IDS.map(getOffer).filter(o=>o && o.status!=="exhausted");
   if(!list.length){ el.innerHTML=""; return; }
-  el.innerHTML=`<div class="feat-scroll">`+list.map(o=>`
-    <div class="feat-banner clickable" data-cmp="${esc(o.campaign_id)}">
-      <div class="fb-ic">${o.image?`<img src="${esc(o.image)}" alt="">`:(o.icon||"🛒")}</div>
-      <div class="fb-body">
-        <div class="fb-tag">★ Featured reward</div>
-        <div class="fb-name">${esc(o.product||"")}</div>
-        ${o.tagline?`<div class="fb-tagline">${esc(o.tagline)}</div>`:""}
-      </div>
-      <div class="fb-cb">${cbDisplay(o).replace(" back","")}<span>back</span></div>
-    </div>`).join("")+`</div>`;
+  el.innerHTML=`<div class="fcar">
+    <div class="fcar-vp"><div class="fcar-track" id="fcarTrack">`+list.map(o=>`
+      <div class="feat-banner clickable" data-cmp="${esc(o.campaign_id)}">
+        <div class="fb-ic">${o.image?`<img src="${esc(o.image)}" alt="">`:(o.icon||"🛒")}</div>
+        <div class="fb-body">
+          <div class="fb-tag">★ Featured reward</div>
+          <div class="fb-name">${esc(o.product||"")}</div>
+          ${o.tagline?`<div class="fb-tagline">${esc(o.tagline)}</div>`:""}
+        </div>
+        <div class="fb-cb">${cbDisplay(o).replace(" back","")}<span>back</span></div>
+      </div>`).join("")+`</div></div>
+    <div class="fcar-nav">
+      <button class="sc-arrow" id="fcarPrev" aria-label="Previous featured reward">‹</button>
+      <div class="sc-dots" id="fcarDots"></div>
+      <button class="sc-arrow" id="fcarNext" aria-label="Next featured reward">›</button>
+    </div>
+  </div>`;
   el.querySelectorAll(".feat-banner[data-cmp]").forEach(b=>b.addEventListener("click",()=>openOffer(b.dataset.cmp)));
+  const track=$("fcarTrack"), dotsWrap=$("fcarDots"), cards=[...track.children]; let idx=0;
+  const dots=cards.map((_,i)=>{ const d=document.createElement("button"); d.className="sc-dot"+(i===0?" on":"");
+    d.setAttribute("aria-label","Featured reward "+(i+1)); d.addEventListener("click",()=>go(i)); dotsWrap.appendChild(d); return d; });
+  function go(i){ idx=(i+cards.length)%cards.length; track.style.transform="translateX("+(-idx*100)+"%)"; dots.forEach((x,j)=>x.classList.toggle("on",j===idx)); }
+  $("fcarPrev").addEventListener("click",()=>go(idx-1));
+  $("fcarNext").addEventListener("click",()=>go(idx+1));
+  if(cards.length<=1){ $("fcarPrev").style.display="none"; $("fcarNext").style.display="none"; dotsWrap.style.display="none"; }
 }
 function renderClipped(){
   const all=[...state.clipped].map(getOffer).filter(Boolean);
