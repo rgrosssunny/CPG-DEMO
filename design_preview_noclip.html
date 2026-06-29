@@ -379,10 +379,11 @@ body.cashback-only .action-tiles{ display:none }
 .hdr-bal{ display:flex;align-items:center;gap:6px;border:0;cursor:pointer;background:rgba(255,255,255,.14);
   color:#fff;font-family:inherit;font-weight:800;font-size:13px;padding:8px 12px;border-radius:var(--r-pill) }
 .hdr-bal:hover{ background:rgba(255,255,255,.26) }
-.bal-modal-grid{ display:flex;gap:12px;margin:6px 0 18px }
-.bal-modal-grid>div{ flex:1;background:var(--cream-warm);border-radius:12px;padding:14px;text-align:left }
-.bal-modal-grid .bl{ font-size:12px;color:var(--ink-500);font-weight:600 }
-.bal-modal-grid .bn{ font-size:24px;font-weight:800;margin-top:2px }
+.bal-rows{ margin:8px 0 14px }
+.bal-row{ display:flex;align-items:center;justify-content:space-between;padding:14px 4px;font-size:14px;font-weight:600;color:var(--ink-700) }
+.bal-row+.bal-row{ border-top:1px solid var(--line-faint) }
+.bal-row .bn{ font-size:20px;font-weight:800;color:var(--ink-900) }
+.bal-row.lifetime .bn{ color:var(--success) }
 /* Solid, always-visible bottom action bar (part of the layout — can't be cut off
    like the old floating button). Pinned below the scrolling content. */
 .action-bar{ display:none; flex:none; gap:10px; padding:12px 16px calc(12px + env(safe-area-inset-bottom));
@@ -842,11 +843,12 @@ body.cashback-only .action-bar{ display:flex }
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="balTitle">
     <div class="m-ic">💰</div>
     <h2 id="balTitle">Your Rewards</h2>
-    <div class="bal-modal-grid">
-      <div><div class="bl">Rewards earned</div><div class="bn" id="cbEarned">$0.00</div></div>
-      <div><div class="bl">Pending review</div><div class="bn" id="cbPending">$0.00</div></div>
+    <div class="bal-rows">
+      <div class="bal-row"><span>Rewards balance</span><span class="bn" id="cbBalance">$0.00</span></div>
+      <div class="bal-row"><span>Pending review</span><span class="bn" id="cbPending">$0.00</span></div>
+      <div class="bal-row lifetime"><span>Lifetime rewards</span><span class="bn" id="cbLifetime">$0.00</span></div>
     </div>
-    <p style="text-align:center">Rewards are paid to your Sunny Rewards card. Pending items are under review and usually clear within 24 hours.</p>
+    <p style="text-align:center">Your rewards balance is available to spend on your Sunny Rewards card. Pending items are under review and usually clear within 24 hours.</p>
     <button class="btn btn-primary btn-block" id="balClose">Close</button>
   </div>
 </div>
@@ -934,8 +936,9 @@ const REVIEW_DAYS = 7; // receipt eligibility window (FRD-06)
 /* ---------- in-memory member state (prototype only) ---------- */
 const state = {
   balance: 85.00,
-  cashbackEarned: 0.00,
-  cashbackPending: 0.00,
+  rewardsBalance: 12.50,    // current rewards available on the Sunny Rewards card (the header pill)
+  rewardsLifetime: 47.50,   // total rewards ever earned
+  cashbackPending: 3.00,    // rewards under review, not yet on the card
   offers: [],
   submissions: [
     { icon:"🧾", store:"CVS Pharmacy", detail:"Centrum Silver · $3.00 back", when:"2 days ago", status:"credited", label:"Credited" },
@@ -1024,12 +1027,13 @@ function toast(msg){
 
 /* ---------- render dynamic UI ---------- */
 function renderStrip(){
-  $("cbEarned").textContent = money(state.cashbackEarned);
-  $("cbPending").textContent = money(state.cashbackPending);
+  if($("cbBalance")) $("cbBalance").textContent = money(state.rewardsBalance);
+  if($("cbPending")) $("cbPending").textContent = money(state.cashbackPending);
+  if($("cbLifetime")) $("cbLifetime").textContent = money(state.rewardsLifetime);
   $("balance").textContent = state.balance.toFixed(2);
-  const cbp=$("cbPurse"); if(cbp) cbp.textContent = state.cashbackEarned.toFixed(2);
-  const cbps=$("cbPurseShop"); if(cbps) cbps.textContent = state.cashbackEarned.toFixed(2);
-  const hb=$("hdrBalanceAmt"); if(hb) hb.textContent = money(state.cashbackEarned);
+  const cbp=$("cbPurse"); if(cbp) cbp.textContent = state.rewardsBalance.toFixed(2);
+  const cbps=$("cbPurseShop"); if(cbps) cbps.textContent = state.rewardsBalance.toFixed(2);
+  const hb=$("hdrBalanceAmt"); if(hb) hb.textContent = money(state.rewardsBalance);
 }
 function cbDisplay(o){
   const amts=(o.sizes&&o.sizes.length?o.sizes.map(s=>Number(s.cashback)):[Number(o.cashback)]);
@@ -1423,7 +1427,7 @@ function showReceiptResult(d){
     items: redeemed.map(m=>({offer:m.offer, size:m.size, cashback:m.cashback, via:m.via, confidence:m.confidence,
       status:(m.via==="upc"||m.confidence==="high")?"credited":"toverify"})) };
   const autoCash=currentRx.items.filter(i=>i.status==="credited").reduce((s,i)=>s+i.cashback,0);
-  if(autoCash>0){ state.cashbackEarned+=autoCash; state.balance+=autoCash; }
+  if(autoCash>0){ state.rewardsBalance+=autoCash; state.rewardsLifetime+=autoCash; }
   renderStrip();
   renderRxResult();
 }
@@ -1456,7 +1460,7 @@ function renderRxResult(){
     : `<div class="rx-hero"><div class="rx-badge">✓</div>
         <div class="rx-amt">+${money(creditedCash)}</div>
         <div class="rx-lab">back added to your card</div>
-        <div class="rx-sub">New balance ${money(state.balance)}</div></div>`;
+        <div class="rx-sub">Rewards balance ${money(state.rewardsBalance)}</div></div>`;
   const foot = `<div class="rx-foot">${esc(rx.vendor)} · ${esc(rx.raw.date?String(rx.raw.date).slice(0,10):"—")} · ${Array.isArray(rx.raw.line_items)?rx.raw.line_items.length:0} items read</div>
       <details style="margin-top:8px"><summary>View raw OCR JSON</summary><pre>${esc(JSON.stringify(rx.raw,null,2))}</pre></details>`;
   const btn = toverify.length
@@ -1480,7 +1484,7 @@ function verifyScan(upc){
   const codes=[{upc:it.offer.upc}].concat(it.offer.sizes||[]);
   const ok=codes.some(c=>[...upcVariants(c.upc)].some(x=>w.has(x)));
   if(ok){
-    it.status="credited"; it.verified=true; state.cashbackEarned+=it.cashback; state.balance+=it.cashback; renderStrip();
+    it.status="credited"; it.verified=true; state.rewardsBalance+=it.cashback; state.rewardsLifetime+=it.cashback; renderStrip();
     verifyIdx=null; closeBarcode(); renderRxResult();
     toast(`${money(it.cashback)} verified & added 🎉`);
   }else{
