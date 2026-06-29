@@ -178,6 +178,12 @@
     background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff;
     border-radius:var(--r-lg);padding:16px;margin:12px 0;box-shadow:var(--shadow-md) }
   .feat-banner:hover{ filter:brightness(1.05) }
+  /* horizontal scroll strip of featured rewards */
+  .feat-scroll{ display:flex; gap:12px; overflow-x:auto; scroll-snap-type:x mandatory;
+    -webkit-overflow-scrolling:touch; margin:12px 0; padding-bottom:4px }
+  .feat-scroll::-webkit-scrollbar{ display:none }
+  .feat-scroll .feat-banner{ flex:0 0 88%; scroll-snap-align:start; margin:0 }
+  @media(min-width:760px){ .feat-scroll .feat-banner{ flex-basis:46% } }
   .feat-banner .fb-ic{ width:76px;height:76px;flex:none;border-radius:14px;background:#fff;
     display:grid;place-items:center;font-size:40px;overflow:hidden }
   .feat-banner .fb-ic img{ width:100%;height:100%;object-fit:contain;padding:9px }
@@ -767,9 +773,6 @@ body.cashback-only .action-bar{ display:flex }
 
     <!-- ================= CASH BACK (standalone site, reached via ?view=cashback) ================= -->
     <section class="tab-panel" id="tab-cashback">
-      <h1 class="page">Rewards on everyday buys</h1>
-      <p class="muted" id="cbSubtitle" style="margin:0 2px 12px;font-size:13px;line-height:1.4">Scan your receipt to get rewards on everyday items you buy.</p>
-
       <div class="action-tiles">
         <div class="action-tile" id="openReceipt">
           <div class="glyph"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a2 2 0 0 1 2 2v15l-3-2-3 2-3-2-3 2-3-2V6a2 2 0 0 1 2-2z" transform="translate(1 0)"/><path d="M8 8h7M8 12h7"/></svg></div>
@@ -783,7 +786,7 @@ body.cashback-only .action-bar{ display:flex }
         </div>
       </div>
 
-      <div class="section-label">Rewards offers</div>
+      <div class="section-label" style="margin-top:6px">Featured rewards</div>
       <div id="featuredBanner"></div>
       <div class="filter-bar">
         <select id="sortSel" class="fsel" aria-label="Sort offers">
@@ -1079,21 +1082,22 @@ function renderOffers(){
     el.addEventListener("click",()=>openOffer(el.dataset.cmp));
   });
 }
+const FEATURED_IDS=["CMP-1002","CMP-1013","CMP-1005"];   // Centrum, Claritin, Advil
 function renderFeatured(){
   const el=$("featuredBanner"); if(!el) return;
-  const active=state.offers.filter(o=>o.status!=="exhausted");
-  if(!active.length){ el.innerHTML=""; return; }
-  const o=active.slice().sort((a,b)=>offerMaxCash(b)-offerMaxCash(a))[0];   // highest-value active offer
-  el.innerHTML=`<div class="feat-banner clickable" data-cmp="${esc(o.campaign_id)}">
-    <div class="fb-ic">${o.image?`<img src="${esc(o.image)}" alt="">`:(o.icon||"🛒")}</div>
-    <div class="fb-body">
-      <div class="fb-tag">★ Featured reward</div>
-      <div class="fb-name">${esc(o.product||"")}</div>
-      ${o.tagline?`<div class="fb-tagline">${esc(o.tagline)}</div>`:""}
-    </div>
-    <div class="fb-cb">${cbDisplay(o).replace(" back","")}<span>back</span></div>
-  </div>`;
-  el.querySelector(".feat-banner").addEventListener("click",()=>openOffer(o.campaign_id));
+  const list=FEATURED_IDS.map(getOffer).filter(o=>o && o.status!=="exhausted");
+  if(!list.length){ el.innerHTML=""; return; }
+  el.innerHTML=`<div class="feat-scroll">`+list.map(o=>`
+    <div class="feat-banner clickable" data-cmp="${esc(o.campaign_id)}">
+      <div class="fb-ic">${o.image?`<img src="${esc(o.image)}" alt="">`:(o.icon||"🛒")}</div>
+      <div class="fb-body">
+        <div class="fb-tag">★ Featured reward</div>
+        <div class="fb-name">${esc(o.product||"")}</div>
+        ${o.tagline?`<div class="fb-tagline">${esc(o.tagline)}</div>`:""}
+      </div>
+      <div class="fb-cb">${cbDisplay(o).replace(" back","")}<span>back</span></div>
+    </div>`).join("")+`</div>`;
+  el.querySelectorAll(".feat-banner[data-cmp]").forEach(b=>b.addEventListener("click",()=>openOffer(b.dataset.cmp)));
 }
 function renderClipped(){
   const all=[...state.clipped].map(getOffer).filter(Boolean);
