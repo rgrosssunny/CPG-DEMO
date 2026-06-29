@@ -1,29 +1,7 @@
-/*
- * ReceiptCaptureSDK — client-side receipt capture engine + guided full-screen UI.
- *
- * Client side of the cloud-hybrid architecture. Prepares and delivers an
- * optimized media payload; NO fraud / dedup / DB logic lives here.
- *
- * Engine (headless): rear camera (macro focus) w/ fallback, DPR-aware crop,
- * skew rotation, luminance guard, grayscale JPEG @0.85, vertical stitching,
- * presigned-PUT + 2s polling pipeline.
- *
- * Guided UI (full-screen), two modes:
- *   LIVE   — edge-to-edge preview with per-edge detection: each of the left /
- *            right / bottom edges shows GREEN ✓ when its edge is detected, AMBER
- *            ? when not. The bottom edge only appears when the receipt's end is
- *            actually in view. Capture is MANUAL (tap the shutter). On a
- *            continuation section a tinted sliver of the previous capture is
- *            pinned to the top to line up the stitch.
- *   REVIEW  — frozen still + "Store / Date/Time / Total" checklist, with
- *            Retake · Use receipt photo · Long receipt? Add section.
- *
- * Usage:
- *   const sdk = new ReceiptCaptureSDK({ userId, endpoints });
- *   const result = await sdk.captureFlow();   // rejects {cancelled:true} on close
- */
 (function (global) {
   "use strict";
+
+  const SDK_VERSION = "0.1.0";
 
   const DEFAULTS = {
     idealWidth: 1920,
@@ -33,19 +11,22 @@
     lumaMin: 40,
     lumaMax: 230,
     glareMax: 0.14,
-    edgeDetection: true,   // OpenCV.js: detect receipt edges
-    // Fixed bounding box (fractions of the viewport). The box never moves; the
-    // user aligns the receipt to it. An edge lights green when the receipt's
-    // matching edge lands within `alignTol` of the box edge.
+    edgeDetection: true,
     box: { left: 0.08, right: 0.92, top: 0.11 },
-    alignTol: 0.12,        // ±fraction within which an edge counts as aligned (green)
-    contrastMin: 26,       // min brightness range for a band to exist (vs blank scene)
-    textureMin: 0.035,     // min Canny edge-density in the band => text => real receipt
+    alignTol: 0.12,
+    contrastMin: 26,
+    textureMin: 0.035,
     pollIntervalMs: 2000,
     maxPolls: 60,
     userId: "demo-user",
     endpoints: { uploadUrl: "/aws/get-upload-url", status: "/aws/analyze-status" },
     opencvUrl: "https://docs.opencv.org/4.8.0/opencv.js",
+    maxUploadBytes: 20 * 1024 * 1024,
+    fetchTimeoutMs: 30000,
+    retryAttempts: 3,
+    retryBaseMs: 1000,
+    blurThreshold: 80,
+    fuzzyMergeThreshold: 0.75,
   };
 
   const AMBER = "#F5B301";
@@ -71,11 +52,9 @@
       this._edges = null;
     }
 
-    /* ----------------------------------------------------------- events --- */
     on(event, cb) { (this._listeners[event] = this._listeners[event] || []).push(cb); return this; }
     _emit(event, payload) { (this._listeners[event] || []).forEach((cb) => { try { cb(payload); } catch (_) {} }); }
 
-    /* ============================ HIGH-LEVEL FLOW ====================== */
     captureFlow() {
       return new Promise(async (resolve, reject) => {
         this._resolveFlow = resolve;
@@ -93,7 +72,6 @@
       });
     }
 
-    /* ----------------------------------------------------- full-screen UI -- */
     _buildUI() {
       this._injectStyles();
       const root = document.createElement("div");
@@ -105,7 +83,6 @@
       video.playsInline = true; video.autoplay = true; video.muted = true;
       this.video = video; root.appendChild(video);
 
-      // Per-edge guide rails (positioned/colored live).
       const mkRail = (cls) => {
         const r = document.createElement("div");
         r.className = "rcap-rail " + cls;
@@ -117,18 +94,15 @@
       const rails = { left: mkRail("v left"), right: mkRail("v right"),
                       bottom: mkRail("h bottom"), top: mkRail("h top") };
 
-      // Hidden reticle: the capture region for the fixed-rect fallback crop.
       const reticle = document.createElement("div");
       reticle.className = "rcap-reticle";
       root.appendChild(reticle);
       this.reticle = reticle;
 
-      // Continuation sliver (tinted) of the previous section's bottom.
       const overlap = document.createElement("canvas");
       overlap.className = "rcap-overlap"; overlap.style.display = "none";
       root.appendChild(overlap);
 
-      // Frozen still (review) + field checklist
       const still = document.createElement("img");
       still.className = "rcap-still"; still.alt = "Captured section";
       root.appendChild(still);
@@ -137,7 +111,6 @@
       checklist.innerHTML = '<span><b>?</b> Store</span><span><b>?</b> Date/Time</span><span><b>?</b> Total</span>';
       root.appendChild(checklist);
 
-      // Top bar
       const top = document.createElement("div");
       top.className = "rcap-top";
       top.innerHTML =
@@ -150,17 +123,14 @@
         '</div>';
       root.appendChild(top);
 
-      // Lighting coach (only shown for dark/glare problems)
       const coach = document.createElement("div");
       coach.className = "rcap-coach"; root.appendChild(coach);
 
-      // Long-receipt hint (live)
       const hint = document.createElement("div");
       hint.className = "rcap-hint";
       hint.textContent = "Have a long receipt? You can add more sections next.";
       root.appendChild(hint);
 
-      // Help panel
       const help = document.createElement("div");
       help.className = "rcap-help-panel"; help.hidden = true;
       help.innerHTML =
@@ -172,7 +142,6 @@
         '<button class="rcap-btn-solid rcap-help-close">Got it</button></div>';
       root.appendChild(help);
 
-      // Bottom controls
       const bottom = document.createElement("div");
       bottom.className = "rcap-bottom";
       bottom.innerHTML =
@@ -188,7 +157,6 @@
       proc.innerHTML = '<div class="rcap-spin"></div><div class="rcap-proc-msg">Uploading…</div>';
       root.appendChild(proc);
 
-      // Error / rejection panel (shows the reason — never fails silently).
       const errp = document.createElement("div");
       errp.className = "rcap-errpanel"; errp.hidden = true;
       errp.innerHTML =
@@ -233,7 +201,6 @@
   font-family:Manrope,system-ui,-apple-system,sans-serif;color:#fff;-webkit-user-select:none;user-select:none}
 .rcap-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
 .rcap-reticle{position:absolute;top:11%;bottom:0;left:8%;right:8%;pointer-events:none}
-/* fixed bounding-box edges — positions never change; only the color toggles */
 .rcap-rail{position:absolute;z-index:3;pointer-events:none}
 .rcap-rail.v{top:11%;bottom:0;width:0;border-left:3px solid ${AMBER}}
 .rcap-rail.v.on{border-left-color:${GREEN}}
@@ -251,10 +218,8 @@
 .rcap-rail.v.left .rcap-pill{left:5px;transform:rotate(180deg)}
 .rcap-rail.v.right .rcap-pill{right:5px}
 .rcap-rail.h .rcap-pill{left:50%;top:6px;transform:translateX(-50%)}
-/* continuation sliver */
 .rcap-overlap{position:absolute;top:9%;left:8%;right:8%;height:60px;object-fit:cover;object-position:bottom;
   z-index:4;border-bottom:2px dashed ${GREEN};filter:hue-rotate(280deg) saturate(1.4);opacity:.92}
-/* review still + checklist */
 .rcap-still{position:absolute;top:9%;left:8%;right:8%;height:78%;object-fit:contain;border-radius:6px;background:#111}
 .rcap-checklist{position:absolute;left:50%;top:82%;transform:translateX(-50%);display:flex;gap:14px;
   background:rgba(15,15,18,.82);padding:9px 14px;border-radius:12px;font-size:14px;font-weight:600;white-space:nowrap}
@@ -286,7 +251,6 @@
 .rcap-review-actions{display:flex;flex-direction:column;gap:10px}
 .rcap-use{border:0;border-radius:14px;padding:16px;background:#0E7C86;color:#fff;font-weight:800;font-size:16px;cursor:pointer;font-family:inherit}
 .rcap-add{border:1px solid rgba(255,255,255,.6);background:transparent;border-radius:14px;padding:15px;color:#fff;font-weight:700;font-size:15px;cursor:pointer;font-family:inherit}
-/* mode visibility */
 .rcap-root[data-mode="live"] .rcap-still,
 .rcap-root[data-mode="live"] .rcap-checklist,
 .rcap-root[data-mode="live"] .rcap-review-actions,
@@ -322,7 +286,6 @@
       document.head.appendChild(style);
     }
 
-    /* ------------------------------------------------------- mode + UI ---- */
     _setMode(mode) {
       this._mode = mode;
       if (this._ui) this._ui.root.dataset.mode = mode;
@@ -362,7 +325,6 @@
       setTimeout(() => f.remove(), 240);
     }
 
-    /* ---------------------------------------------------- live analysis --- */
     _startAnalysisLoop() {
       this._loopTimer = setInterval(() => {
         if (this._busy || this._mode !== "live" || !this.video || !this.video.videoWidth) return;
@@ -382,7 +344,6 @@
         this._edges = edges;
         this._updateEdges(edges, cap);
 
-        // Lighting-only coaching (capture is manual — no "hold still" / auto-fire).
         if (mean < this.opts.lumaMin) this._coach("Too dark — add light or tap ⚡");
         else if (mean > this.opts.lumaMax) this._coach("Too bright — reduce light");
         else if (glareFrac > this.opts.glareMax) this._coach("Glare — tilt the receipt");
@@ -392,21 +353,15 @@
       }, 200);
     }
 
-    /** Color the FIXED box edges: green ✓ when the receipt's matching edge lands
-     *  within tolerance of that box edge (so the receipt fills the box at a
-     *  readable size); amber ? otherwise. The box itself never moves. The bottom
-     *  edge is the only dynamic line — shown only when the receipt's bottom is
-     *  detected in view. */
     _updateEdges(edges, cap) {
       const u = this._ui; if (!u) return;
       const o = this.opts, VW = global.innerWidth, VH = global.innerHeight;
       const cont = this.segments.length > 0 && this._mode === "live";
       const setOn = (r, on) => { r.classList.toggle("on", on); r.querySelector(".badge").textContent = on ? "✓" : "?"; };
 
-      // Side rails + top edge are always visible (the fixed guide); only color toggles.
       u.rails.left.style.display = "block";
       u.rails.right.style.display = "block";
-      u.rails.top.style.display = cont ? "none" : "block";   // sliver replaces top on continuation
+      u.rails.top.style.display = cont ? "none" : "block";
 
       const boxL = VW * o.box.left, boxR = VW * o.box.right, boxT = VH * o.box.top;
       const tolX = VW * o.alignTol, tolY = VH * o.alignTol;
@@ -414,7 +369,6 @@
 
       if (edges && cap) {
         const sx = VW / cap.width, sy = VH / cap.height;
-        // green only when the edge is in view AND aligned to the fixed box edge
         if (edges.left.on) lOn = Math.abs(edges.left.x * sx - boxL) <= tolX;
         if (edges.right.on) rOn = Math.abs(edges.right.x * sx - boxR) <= tolX;
         if (!cont && edges.top.on) tOn = Math.abs(edges.top.y * sy - boxT) <= tolY;
@@ -428,7 +382,6 @@
       setOn(u.rails.left, lOn); setOn(u.rails.right, rOn); setOn(u.rails.top, tOn);
     }
 
-    /* ------------------------------------------------ edge detection (CV) -- */
     _loadCV() {
       if (this._cvReady) return Promise.resolve(true);
       if (this._cvLoading) return this._cvLoading;
@@ -456,75 +409,90 @@
       return this._cvLoading;
     }
 
-    /** Detect receipt edges by the BRIGHTNESS BAND (receipt is lighter than the
-     *  background) — robust to interior text, which gradient methods mistake for
-     *  edges. An edge is "on" (detected/green) only when the bright band starts
-     *  or ends INSIDE the frame; if the band touches a border, that edge is
-     *  off-screen (amber ?). Returns {left,right,top,bottom (each {x|y,on}),w,h}.*/
     _detectEdges(canvas) {
       if (!this._cvReady || !global.cv) return null;
       const cv = global.cv, o = this.opts;
-      let src, gray, grayB, colM, rowM, ed;
-      const band = (arr, len, minContrast) => {  // first/last index above a brightness threshold
+
+      // Track ALL Mats (including intermediate ROIs) for guaranteed cleanup.
+      const mats = [];
+      const track = (m) => { mats.push(m); return m; };
+
+      const band = (arr, len, minContrast) => {
         let lo = 1e9, hi = -1e9;
         for (let i = 0; i < len; i++) { const v = arr[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
-        if (hi - lo < minContrast) return null;   // not enough contrast => no band
+        if (hi - lo < minContrast) return null;
         const thr = lo + (hi - lo) * 0.45;
         let s = -1, e = -1;
         for (let i = 0; i < len; i++) if (arr[i] > thr) { if (s < 0) s = i; e = i; }
         return s < 0 ? null : { s, e };
       };
+
       try {
-        src = cv.imread(canvas); gray = new cv.Mat();
+        const src = track(cv.imread(canvas));
+        const gray = track(new cv.Mat());
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-        grayB = new cv.Mat(); cv.GaussianBlur(gray, grayB, new cv.Size(5, 5), 0);
+        const grayB = track(new cv.Mat());
+        cv.GaussianBlur(gray, grayB, new cv.Size(5, 5), 0);
         const w = gray.cols, h = gray.rows;
 
-        // Column brightness band (receipt is lighter than the background).
-        colM = new cv.Mat(); cv.reduce(grayB, colM, 0, cv.REDUCE_AVG, cv.CV_32F);
+        const colM = track(new cv.Mat());
+        cv.reduce(grayB, colM, 0, cv.REDUCE_AVG, cv.CV_32F);
         const cb = band(colM.data32F, w, o.contrastMin);
         if (!cb || cb.e - cb.s < w * 0.12) return null;
 
-        // GATE: the band must be text-dense (a real receipt) — not a blank bright
-        // surface, hand, or wall. Canny edge density inside the band.
+        // Texture gate — Canny edge density inside the band.
         const bx = Math.max(0, cb.s), bw = Math.max(4, Math.min(w - bx, cb.e - cb.s));
-        ed = new cv.Mat();
-        const roiE = gray.roi(new cv.Rect(bx, 0, bw, h));
-        cv.Canny(roiE, ed, 60, 180); roiE.delete();
+        const roiE = track(gray.roi(new cv.Rect(bx, 0, bw, h)));   // tracked!
+        const ed = track(new cv.Mat());
+        cv.Canny(roiE, ed, 60, 180);
         const density = cv.countNonZero(ed) / (bw * h);
-        if (density < o.textureMin) return null;   // not enough text => not a receipt
+        if (density < o.textureMin) return null;
 
         const leftOn = cb.s > w * 0.03, rightOn = cb.e < w * 0.97;
         const left = { x: leftOn ? cb.s : Math.round(w * 0.08), on: leftOn };
         const right = { x: rightOn ? cb.e : Math.round(w * 0.92), on: rightOn };
 
-        // Row brightness within the band -> top/bottom edges (in view or not).
+        // Row brightness - top/bottom edges.
         let top = { y: 0, on: false }, bottom = { y: h, on: false };
-        const roi = grayB.roi(new cv.Rect(bx, 0, bw, h));
-        rowM = new cv.Mat(); cv.reduce(roi, rowM, 1, cv.REDUCE_AVG, cv.CV_32F); roi.delete();
+        const roi = track(grayB.roi(new cv.Rect(bx, 0, bw, h)));   // tracked!
+        const rowM = track(new cv.Mat());
+        cv.reduce(roi, rowM, 1, cv.REDUCE_AVG, cv.CV_32F);
         const rb = band(rowM.data32F, h, 12);
         if (rb) {
           if (rb.s > h * 0.03) top = { y: rb.s, on: true };
           if (rb.e < h * 0.97) bottom = { y: rb.e, on: true };
         }
         return { left, right, top, bottom, w, h };
-      } catch (_) { return null; }
-      finally { [src, gray, grayB, colM, rowM, ed].forEach((m) => { if (m && m.delete) { try { m.delete(); } catch (_) {} } }); }
+      } catch (_) {
+        return null;
+      } finally {
+        // Delete ALL tracked Mats — no leaks even on mid-function exceptions.
+        for (let i = mats.length - 1; i >= 0; i--) {
+          try { if (mats[i] && mats[i].delete) mats[i].delete(); } catch (_) {}
+        }
+      }
     }
 
-    /* ---------------------------------------------------- capture actions -- */
     _manualCapture() { if (this._mode === "live" && !this._busy) this._doCapture(); }
 
     _doCapture() {
       try {
-        if (!this._captureBox()) this.capture();   // capture() = fixed-rect fallback
+        if (!this._captureBox()) this.capture();
+        // #8 — Blur check on the just-captured segment.
+        const lastSeg = this.segments[this.segments.length - 1];
+        if (lastSeg) {
+          const sharpness = this._measureSharpness(lastSeg);
+          if (sharpness !== null && sharpness < this.opts.blurThreshold) {
+            this._coach("Image looks blurry — hold steady and retake");
+            this.removeLastSegment();
+            return;
+          }
+        }
         this._flashAnim();
         this._enterReview();
       } catch (err) { this._coach(err.message); }
     }
 
-    /** Capture the FIXED bounding-box region (consistent size for OCR), cropped
-     *  down to the receipt's bottom edge when it's detected in view. */
     _captureBox() {
       const hi = this._coverCropCanvas(1600);
       if (!hi) return false;
@@ -549,7 +517,6 @@
       return true;
     }
 
-    /* ---------------------------------------------- fixed-rect fallback --- */
     capture() {
       const v = this.video;
       if (!v || !v.videoWidth) throw new Error("Camera not started.");
@@ -587,7 +554,6 @@
       return sum / n;
     }
 
-    /* ----------------------------------------------------- review actions -- */
     _enterReview() {
       const last = this.segments[this.segments.length - 1];
       if (this._ui && last) { try { this._ui.still.src = last.toDataURL("image/jpeg", 0.85); } catch (_) {} }
@@ -607,12 +573,10 @@
         if (this._resolveFlow) this._resolveFlow(result);
       } catch (err) {
         this._busy = false; this._ui.proc.hidden = true;
-        // Always surface the reason (rejection or error) — never silently revert.
         this._showErr((err && err.message) ? err.message : "Something went wrong.");
       }
     }
 
-    /** Full-screen error/rejection panel with the reason + Retake / Close. */
     _showErr(msg) {
       if (!this._ui) return;
       this._ui.errMsg.textContent = msg;
@@ -622,23 +586,114 @@
     close() { this.stop(); this._teardownUI(); }
     _teardownUI() {
       if (this._loopTimer) { clearInterval(this._loopTimer); this._loopTimer = null; }
+      this._teardownOrientationHandler();
       if (this._ui && this._ui.root) this._ui.root.remove();
       this._ui = null; this._edges = null;
     }
 
-    /* --------------------------------------------------- camera lifecycle -- */
     async start() {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("Camera API unavailable. Serve over HTTPS.");
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)
+        throw new Error("Camera API unavailable. Serve over HTTPS.");
+
       const { idealWidth, idealHeight } = this.opts;
-      const preferred = { audio: false, video: { facingMode: { exact: "environment" }, width: { ideal: idealWidth }, height: { ideal: idealHeight }, advanced: [{ focusMode: "continuous" }] } };
-      const fallback = { audio: false, video: { facingMode: "environment", width: { ideal: idealWidth }, height: { ideal: idealHeight } } };
-      try { this.stream = await navigator.mediaDevices.getUserMedia(preferred); }
-      catch (err) { this._emit("status", { phase: "fallback", message: "Using default camera." }); this.stream = await navigator.mediaDevices.getUserMedia(fallback); }
-      if (this.video) { this.video.srcObject = this.stream; await this.video.play().catch(() => {}); }
+      const preferred = {
+        audio: false,
+        video: {
+          facingMode: { exact: "environment" },
+          width: { ideal: idealWidth }, height: { ideal: idealHeight },
+          advanced: [{ focusMode: "continuous" }],
+        },
+      };
+      const fallback = {
+        audio: false,
+        video: { facingMode: "environment", width: { ideal: idealWidth }, height: { ideal: idealHeight } },
+      };
+
+      try {
+        this.stream = await navigator.mediaDevices.getUserMedia(preferred);
+      } catch (err) {
+        if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+          // #6 — Show an in-UI recovery panel instead of a raw rejection.
+          this._showPermissionDenied();
+          throw err;   // still reject captureFlow(), but UI is up
+        }
+        // Not a permission issue — try simpler constraints.
+        this._emit("status", { phase: "fallback", message: "Using default camera." });
+        try {
+          this.stream = await navigator.mediaDevices.getUserMedia(fallback);
+        } catch (err2) {
+          if (err2.name === "NotAllowedError" || err2.name === "PermissionDeniedError") {
+            this._showPermissionDenied();
+          }
+          throw err2;
+        }
+      }
+
+      if (this.video) {
+        this.video.srcObject = this.stream;
+        await this.video.play().catch(() => {});
+      }
       this._setupTorch();
+      this._setupOrientationHandler();   // #7
       this._emit("ready", { width: this.video && this.video.videoWidth });
       return this;
     }
+
+    _showPermissionDenied() {
+      if (!this._ui) return;
+      const panel = document.createElement("div");
+      panel.className = "rcap-help-panel";
+      panel.innerHTML =
+        '<div class="rcap-help-card">' +
+        '<h3>Camera access needed</h3>' +
+        '<p style="font-size:14px;line-height:1.5;color:#444;margin:0 0 12px">' +
+        'To scan a receipt, allow camera access in your browser settings:' +
+        '</p>' +
+        '<ul style="font-size:13px;line-height:1.6;color:#555;margin:0 0 16px;padding-left:18px">' +
+        '<li><b>iOS Safari:</b> Settings → Safari → Camera → Allow</li>' +
+        '<li><b>Android Chrome:</b> Tap the lock icon in the address bar → Permissions → Camera</li>' +
+        '<li><b>Desktop:</b> Click the camera icon in the address bar</li>' +
+        '</ul>' +
+        '<button class="rcap-btn-solid rcap-perm-retry">Try again</button>' +
+        '<button class="rcap-add rcap-perm-close" style="color:#173D53;border-color:#cbd5e1;margin-top:10px">Cancel</button>' +
+        '</div>';
+      this._ui.root.appendChild(panel);
+
+      panel.querySelector(".rcap-perm-retry").onclick = async () => {
+        panel.remove();
+        try { await this.start(); this._startAnalysisLoop(); this._setMode("live"); }
+        catch (_) { /* start() will re-show the panel if still denied */ }
+      };
+      panel.querySelector(".rcap-perm-close").onclick = () => { this._cancel(); };
+    }
+
+    _setupOrientationHandler() {
+      // Debounced handler — recalculate crop geometry when the device rotates.
+      this._onOrientationChange = () => {
+        if (this._orientDebounce) clearTimeout(this._orientDebounce);
+        this._orientDebounce = setTimeout(() => {
+          // Re-show the overlap sliver at the correct new dimensions.
+          this._showOverlap();
+          this._emit("status", { phase: "orientation-changed" });
+        }, 300);
+      };
+      global.addEventListener("resize", this._onOrientationChange);
+      // screen.orientation.onchange is more reliable than orientationchange on modern browsers.
+      if (global.screen && global.screen.orientation) {
+        global.screen.orientation.addEventListener("change", this._onOrientationChange);
+      }
+    }
+
+    _teardownOrientationHandler() {
+      if (this._onOrientationChange) {
+        global.removeEventListener("resize", this._onOrientationChange);
+        if (global.screen && global.screen.orientation) {
+          global.screen.orientation.removeEventListener("change", this._onOrientationChange);
+        }
+        this._onOrientationChange = null;
+      }
+    }
+
     _setupTorch() {
       const track = this.stream && this.stream.getVideoTracks()[0];
       const caps = track && track.getCapabilities && track.getCapabilities();
@@ -660,17 +715,74 @@
     clearSegments() { this.segments = []; }
     removeLastSegment() { this.segments.pop(); this._emit("segment", { count: this.segments.length }); }
 
-    /* ------------------------------------------- transmission + merge ----- */
     _toJpegBlob(canvas) {
       return new Promise((resolve, reject) => {
-        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Failed to encode JPEG."))), "image/jpeg", this.opts.jpegQuality);
+        // Try JPEG first at configured quality.
+        canvas.toBlob(
+          (b) => {
+            if (b) return resolve(b);
+            // JPEG failed (some Android WebViews) — try lower quality.
+            canvas.toBlob(
+              (b2) => {
+                if (b2) return resolve(b2);
+                // JPEG completely broken — fall back to PNG.
+                canvas.toBlob(
+                  (b3) => {
+                    if (b3) return resolve(b3);
+                    reject(new Error("Failed to encode image in any format."));
+                  },
+                  "image/png"
+                );
+              },
+              "image/jpeg",
+              0.6  // lower quality fallback
+            );
+          },
+          "image/jpeg",
+          this.opts.jpegQuality
+        );
       });
     }
 
-    /** Analyze EACH captured section with Textract separately, then merge the
-     *  structured line items (dedup by name). This avoids fragile pixel
-     *  stitching of thermal receipts — each section is read cleanly and the
-     *  overlapping band's items are de-duplicated in the structured data. */
+    async _fetchWithRetry(url, fetchOpts = {}, retryOpts = {}) {
+      const timeoutMs = retryOpts.timeoutMs ?? this.opts.fetchTimeoutMs;
+      const maxRetries = retryOpts.noRetry ? 0 : (retryOpts.retries ?? this.opts.retryAttempts);
+      let lastErr;
+
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const resp = await fetch(url, { ...fetchOpts, signal: controller.signal });
+          clearTimeout(timer);
+          // Retry on 5xx or 429 (rate-limited); don't retry 4xx (client error).
+          if ((resp.status >= 500 || resp.status === 429) && attempt < maxRetries) {
+            lastErr = new Error(`HTTP ${resp.status}`);
+            await this._backoff(attempt);
+            continue;
+          }
+          return resp;
+        } catch (err) {
+          clearTimeout(timer);
+          lastErr = err;
+          if (err.name === "AbortError") {
+            lastErr = new Error(`Request timed out after ${timeoutMs}ms`);
+          }
+          if (attempt < maxRetries) {
+            await this._backoff(attempt);
+            continue;
+          }
+        }
+      }
+      throw lastErr;
+    }
+
+    _backoff(attempt) {
+      const base = this.opts.retryBaseMs;
+      const delay = base * Math.pow(2, attempt) + Math.random() * base * 0.5;
+      return new Promise((r) => setTimeout(r, delay));
+    }
+
     async submit() {
       if (this.segments.length <= 1) {
         const blob = await this._toJpegBlob(this.segments[0]);
@@ -683,8 +795,6 @@
           const r = await this._analyzeBlob(blob, i + 1, this.segments.length);
           if (r) results.push(r);
         } catch (err) {
-          // A single unreadable section shouldn't sink the whole receipt —
-          // skip rejections, but surface hard failures.
           if (!err || !err.rejected) throw err;
           if (err.result) results.push(err.result);
         }
@@ -693,53 +803,141 @@
       return this._mergeResults(results);
     }
 
-    /** One image through the pipeline: get-upload-url -> PUT -> poll. */
     async _analyzeBlob(blob, idx, total) {
       const label = total > 1 ? ` section ${idx}/${total}` : "";
+
+      // #3 — Client-side upload size guard.
+      if (blob.size > this.opts.maxUploadBytes) {
+        throw new Error(
+          `Image too large (${(blob.size / 1024 / 1024).toFixed(1)} MB). ` +
+          `Max is ${(this.opts.maxUploadBytes / 1024 / 1024).toFixed(0)} MB.`
+        );
+      }
+
+      // Step 1: Get upload URL (with retry + timeout).
       this._emit("status", { phase: "requesting-url", message: "Preparing upload" + label + "…" });
-      const urlResp = await fetch(this.opts.endpoints.uploadUrl, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content_type: "image/jpeg" }),
+      const urlResp = await this._fetchWithRetry(this.opts.endpoints.uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content_type: "image/jpeg" }),
       });
       if (!urlResp.ok) throw new Error("Could not get an upload URL (HTTP " + urlResp.status + ").");
       const { job_id, upload_url } = await urlResp.json();
-      this._emit("status", { phase: "uploading", message: "Uploading" + label + "…", bytes: blob.size });
-      const putResp = await fetch(upload_url, { method: "PUT", headers: { "Content-Type": "image/jpeg", "X-User-Id": this.opts.userId }, body: blob });
-      if (!putResp.ok) throw new Error("Upload failed (HTTP " + putResp.status + ").");
+
+      // Step 2: Upload with XHR for progress reporting (#10).
+      this._emit("status", { phase: "uploading", message: "Uploading" + label + "…", bytes: blob.size, progress: 0 });
+      await this._uploadWithProgress(upload_url, blob, label);
+
+      // Step 3: Poll (no retry on individual polls — the loop IS the retry).
       for (let attempt = 1; attempt <= this.opts.maxPolls; attempt++) {
         await new Promise((r) => setTimeout(r, this.opts.pollIntervalMs));
-        const s = await fetch(this.opts.endpoints.status + "?job=" + encodeURIComponent(job_id)).then((r) => r.json());
+        const pollResp = await this._fetchWithRetry(
+          this.opts.endpoints.status + "?job=" + encodeURIComponent(job_id),
+          {},
+          { noRetry: true, timeoutMs: 10000 }
+        );
+        const s = await pollResp.json();
         this._emit("status", { phase: "polling", attempt, status: s.status, message: "Analyzing" + label + "…" });
         if (s.status === "done") return s.result;
-        if (s.status === "rejected") { const e = new Error(s.error || "Receipt rejected."); e.rejected = true; e.result = s.result; throw e; }
+        if (s.status === "rejected") {
+          const e = new Error(s.error || "Receipt rejected.");
+          e.rejected = true; e.result = s.result; throw e;
+        }
         if (s.status === "failed") throw new Error(s.error || "Processing failed.");
         if (s.status === "unknown") throw new Error("Job not found on server.");
       }
       throw new Error("Timed out waiting for OCR result.");
     }
 
-    /** Merge per-section results. The capture overlap is a CONTIGUOUS RUN of
-     *  lines shared at the seam (end of section N == start of section N+1), so
-     *  we drop that boundary run once and keep everything else — preserving
-     *  legitimately repeated purchases (e.g. 3x the same item) anywhere on the
-     *  receipt. Vendor/date come from any section; total from the section that
-     *  has one (the bottom section carries the receipt total). */
+    _uploadWithProgress(url, blob, label) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", url);
+        xhr.setRequestHeader("Content-Type", "image/jpeg");
+        xhr.setRequestHeader("X-User-Id", this.opts.userId);
+        xhr.setRequestHeader("X-SDK-Version", SDK_VERSION);   // #20
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            this._emit("status", {
+              phase: "uploading",
+              message: `Uploading${label}… ${pct}%`,
+              bytes: e.total,
+              loaded: e.loaded,
+              progress: pct,
+            });
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error("Upload failed (HTTP " + xhr.status + ")."));
+        };
+        xhr.onerror = () => reject(new Error("Upload failed (network error)."));
+        xhr.ontimeout = () => reject(new Error("Upload timed out."));
+        xhr.timeout = this.opts.fetchTimeoutMs;
+        xhr.send(blob);
+      });
+    }
+
+    _measureSharpness(canvas) {
+      if (!this._cvReady || !global.cv) return null;
+      const cv = global.cv;
+      const mats = [];
+      const track = (m) => { mats.push(m); return m; };
+      try {
+        const src = track(cv.imread(canvas));
+        const gray = track(new cv.Mat());
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+        const lap = track(new cv.Mat());
+        cv.Laplacian(gray, lap, cv.CV_64F);
+        const mean = track(new cv.Mat());
+        const stddev = track(new cv.Mat());
+        cv.meanStdDev(lap, mean, stddev);
+        // Variance = stddev^2
+        const sd = stddev.data64F[0];
+        return sd * sd;
+      } catch (_) {
+        return null;
+      } finally {
+        for (let i = mats.length - 1; i >= 0; i--) {
+          try { if (mats[i] && mats[i].delete) mats[i].delete(); } catch (_) {}
+        }
+      }
+    }
+
+    _tokenSimilarity(a, b) {
+      const tokenize = (s) => new Set((s || "").replace(/[^a-z0-9\s]/gi, "").toLowerCase().split(/\s+/).filter(Boolean));
+      const ta = tokenize(a), tb = tokenize(b);
+      if (!ta.size || !tb.size) return 0;
+      let inter = 0;
+      for (const t of ta) if (tb.has(t)) inter++;
+      return inter / Math.max(ta.size, tb.size);
+    }
+
     _mergeResults(results) {
-      const firstOf = (sel) => { for (const r of results) { const v = sel(r); if (v != null && v !== "") return v; } return null; };
+      const firstOf = (sel) => {
+        for (const r of results) { const v = sel(r); if (v != null && v !== "") return v; }
+        return null;
+      };
       const vendor = firstOf((r) => r && r.vendor && r.vendor.name);
       const date = firstOf((r) => r && r.date);
       const totals = results.map((r) => r && r.total).filter((v) => v != null);
       const total = totals.length ? totals[totals.length - 1] : null;
       const confs = results.map((r) => r && r.avg_confidence).filter((v) => v != null);
 
-      const norm = (s) => (s || "").replace(/\s+/g, " ").trim().toLowerCase();
-      const sameDesc = (a, b) => norm(a.description) === norm(b.description);
-      // Does `sub` appear as a contiguous run anywhere in `arr`? (match by
-      // description — OCR totals drift between sections.) Prefer the LATEST
-      // position, since the overlap is the lower region of the earlier section.
+      const threshold = this.opts.fuzzyMergeThreshold;
+      const fuzzyMatch = (a, b) => this._tokenSimilarity(a.description, b.description) >= threshold;
+
+      // Does `sub` appear as a contiguous run anywhere in `arr`?
+      // Uses fuzzy matching instead of exact string comparison.
       const findRun = (arr, sub) => {
         for (let start = arr.length - sub.length; start >= 0; start--) {
           let ok = true;
-          for (let j = 0; j < sub.length; j++) { if (!sameDesc(arr[start + j], sub[j])) { ok = false; break; } }
+          for (let j = 0; j < sub.length; j++) {
+            if (!fuzzyMatch(arr[start + j], sub[j])) { ok = false; break; }
+          }
           if (ok) return start;
         }
         return -1;
@@ -748,8 +946,6 @@
       let items = ((results[0] && results[0].line_items) || []).slice();
       for (let s = 1; s < results.length; s++) {
         const next = (results[s] && results[s].line_items) || [];
-        // Largest L where next[:L] matches a contiguous run anywhere in `items`
-        // (the overlap region). Drop it once; append the rest (incl. repeats).
         let L = 0;
         for (let cand = Math.min(items.length, next.length); cand >= 1; cand--) {
           if (findRun(items, next.slice(0, cand)) !== -1) { L = cand; break; }
@@ -762,6 +958,7 @@
         line_items: items, line_item_count: items.length,
         avg_confidence: confs.length ? Math.round((confs.reduce((a, b) => a + b, 0) / confs.length) * 100) / 100 : null,
         source: "aws-textract", merged_sections: results.length,
+        sdk_version: SDK_VERSION,   // #20 — version in every result
       };
     }
 
@@ -781,5 +978,6 @@
     }
   }
 
+  ReceiptCaptureSDK.VERSION = SDK_VERSION;
   global.ReceiptCaptureSDK = ReceiptCaptureSDK;
 })(window);
