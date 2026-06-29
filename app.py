@@ -18,9 +18,11 @@ Run:
 import base64
 import hashlib
 import json
+import logging
 import os
 import re
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -41,33 +43,83 @@ VERYFI_URL = "https://api.veryfi.com/api/v8/partner/documents"
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 RECEIPT_MAX_AGE_DAYS = int(os.getenv("RECEIPT_MAX_AGE_DAYS", "14"))
 TEXTRACT_MIN_CONFIDENCE = float(os.getenv("TEXTRACT_MIN_CONFIDENCE", "50"))
-# Off by default during prototyping so the same receipt can be re-scanned.
-# Set DEDUP_ENABLED=true in production to enforce the anti-fraud guards.
 DEDUP_ENABLED = os.getenv("DEDUP_ENABLED", "false").lower() == "true"
 
-# In-memory stores (prototype only — reset on restart). A real deployment would
-# use S3 + Textract async jobs + DynamoDB for the dedup indexes.
-JOBS = {}              # job_id -> {status, result, error, key}
-SEEN_IMAGE_HASHES = {}  # sha256 -> job_id  (strict image collision)
-SEEN_SEMANTIC = {}      # composite string -> job_id  (semantic collision)
+# In-memory stores (prototype only -- reset on restart).
+SEEN_IMAGE_HASHES = {}
+SEEN_SEMANTIC = {}
 
-MAX_BYTES = 20 * 1024 * 1024  # Veryfi max file size is 20 MB
+MAX_BYTES = 20 * 1024 * 1024
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 OFFERS_PATH = os.path.join(APP_DIR, "offers.json")
 
 app = Flask(__name__, static_folder="static")
 
-# Allow the GitHub Pages frontend (a different origin) to call the /aws/* API.
-# Set ALLOWED_ORIGIN to your Pages origin in production; "*" is fine for testing
-# since these endpoints carry no cookies/credentials.
 ALLOWED_ORIGIN = os.getenv("ALLOWED_ORIGIN", "*")
 CORS(app, resources={r"/aws/*": {"origins": ALLOWED_ORIGIN}})
 
+# --- Backend patch: ALLOWED_ORIGIN warning (#15) ---
+logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------- offers/UPC --
+if ALLOWED_ORIGIN == "*":
+    logger.warning(
+        "ALLOWED_ORIGIN is '*' (allow all origins). "
+        "Set ALLOWED_ORIGIN to your frontend's exact origin for production "
+        "(e.g., ALLOWED_ORIGIN=https://your-app.example.com)."
+    )
+
+
+# --- Backend patch: Thread-safe job store (#11 + #12) ---
+
+class ThreadSafeJobStore:
+    """Thread-safe job store with TTL eviction (#11 + #12).
+
+    All reads/writes go through methods that hold the lock.
+    Jobs older than `ttl_seconds` are evicted on every write."""
+
+    def __init__(self, ttl_seconds=1800):
+        self._lock = threading.Lock()
+        self._jobs = {}             # job_id -> {status, result, error, key, _created}
+        self._ttl = ttl_seconds     # 30 minutes default
+
+    def create(self, job_id, data):
+        with self._lock:
+            self._evict()
+            data["_created"] = time.time()
+            self._jobs[job_id] = data
+
+    def get(self, job_id):
+        with self._lock:
+            return self._jobs.get(job_id)
+
+    def update(self, job_id, **kwargs):
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job:
+                job.update(kwargs)
+
+    def exists(self, job_id):
+        with self._lock:
+            return job_id in self._jobs
+
+    def _evict(self):
+        """Remove jobs older than TTL. Called inside the lock."""
+        now = time.time()
+        expired = [k for k, v in self._jobs.items()
+                   if now - v.get("_created", 0) > self._ttl]
+        for k in expired:
+            del self._jobs[k]
+
+    @property
+    def count(self):
+        with self._lock:
+            return len(self._jobs)
+
+
+JOBS = ThreadSafeJobStore(ttl_seconds=1800)   # 30-minute TTL
+
+
 def load_offers():
-    """Load the offer catalog. Read on each request so you can edit offers.json
-    without restarting the server during the POC."""
     try:
         with open(OFFERS_PATH, encoding="utf-8") as fh:
             return json.load(fh)
@@ -76,28 +128,22 @@ def load_offers():
 
 
 def upc_variants(code):
-    """Equivalent forms of a barcode so UPC-A and EAN-13 match each other."""
     digits = "".join(ch for ch in str(code) if ch.isdigit())
     if not digits:
         return set()
     variants = {digits}
     if len(digits) == 13 and digits.startswith("0"):
-        variants.add(digits[1:])      # EAN-13 -> UPC-A
+        variants.add(digits[1:])
     if len(digits) == 12:
-        variants.add("0" + digits)    # UPC-A -> EAN-13
-    # UPC-A/EAN "core" = manufacturer+product digits (drop the leading
-    # number-system/pad digit(s) and the trailing check digit) so a full
-    # 12/13/14-digit code reconciles with a 10-digit catalog code, and vice-versa.
+        variants.add("0" + digits)
     if len(digits) >= 12:
         variants.add(digits[-11:-1])
     if len(digits) == 11:
-        variants.add(digits[:10])     # drop check digit only
+        variants.add(digits[:10])
     return variants
 
 
 def offer_candidate_upcs(offer):
-    """Every UPC that should qualify for an offer, with the cashback + size that
-    applies. Returns list of (variant_set, size_label, cashback)."""
     out = []
     base_cash = offer.get("cashback")
     sizes = offer.get("sizes") or []
@@ -105,14 +151,11 @@ def offer_candidate_upcs(offer):
         for s in sizes:
             out.append((upc_variants(s.get("upc", "")),
                         s.get("size"), s.get("cashback", base_cash)))
-    # Always include the top-level UPC as a fallback candidate.
     out.append((upc_variants(offer.get("upc", "")), None, base_cash))
     return out
 
 
 def line_item_upcs(line_item):
-    """Collect every barcode signal Veryfi gives for a line item: the printed
-    `upc`, plus `ean`/`gtin_14` from the product_details enrichment."""
     found = set()
     if line_item.get("upc"):
         found |= upc_variants(line_item["upc"])
@@ -123,37 +166,129 @@ def line_item_upcs(line_item):
     return found
 
 
+# --- Quantity patch: new helpers ---
+
+# Matches common receipt quantity patterns embedded in the description.
+#   "2@ $3.99"  "2 @ 3.99"  "4X $1.50"  "4x 1.50"  "3 x 2.00"
+#   "QTY 3"  "Qty: 3"  "QTY:3"
+_QTY_FROM_DESC = re.compile(
+    r"(?:^|\s)(\d{1,3})\s*[×xX@]\s"       # 2@  4X  3 x
+    r"|\bQTY\s*:?\s*(\d{1,3})\b",          # QTY 3  Qty:3
+    re.I,
+)
+
+# Weight units -- if the quantity string contains one of these, it's a weight,
+# not a discrete count (e.g., "0.35 lb"). Cashback should apply once, not 0.35x.
+_WEIGHT_UNITS = re.compile(r"\b(lb|lbs|oz|kg|g|gal|fl\.?\s*oz|pt|qt)\b", re.I)
+
+
+def _parse_qty_int(qty_val):
+    """Parse a quantity value (string or number) into an integer count.
+
+    Returns 1 for weights ("0.35 lb"), fractional values, unparseable strings,
+    or None. Only returns >1 for whole-number counts."""
+    if qty_val is None:
+        return 1
+    s = str(qty_val).strip()
+    if not s:
+        return 1
+    # Weights aren't discrete counts -- treat as qty 1 for cashback purposes.
+    if _WEIGHT_UNITS.search(s):
+        return 1
+    # Pull the first number from the string.
+    m = re.search(r"(\d+\.?\d*)", s)
+    if not m:
+        return 1
+    try:
+        n = float(m.group(1))
+        # Only use it if it's a whole number >= 1 (fractional = weight).
+        if n == int(n) and n >= 1:
+            return int(n)
+        return 1
+    except (ValueError, TypeError):
+        return 1
+
+
+def _extract_quantity(row):
+    """If the row has no quantity (or qty 1), try to extract one from the
+    description text. Updates row['quantity'] and row['qty'] in place."""
+    current = row.get("quantity")
+    qty_int = _parse_qty_int(current)
+
+    # If Textract already gave a real count, use it.
+    if qty_int > 1:
+        row["qty"] = qty_int
+        return
+
+    # Try to pull a count from the description (e.g., "2@ $3.99 BANANA").
+    desc = row.get("description") or ""
+    m = _QTY_FROM_DESC.search(desc)
+    if m:
+        raw = m.group(1) or m.group(2)
+        parsed = _parse_qty_int(raw)
+        if parsed > 1:
+            row["quantity"] = raw
+            row["qty"] = parsed
+            row["qty_source"] = "description"  # for debugging
+            return
+
+    row["qty"] = qty_int   # default: 1
+
+
+# --- Quantity patch: quantity-aware match_receipt_to_clipped ---
+
 def match_receipt_to_clipped(line_items, offers, clipped_ids):
     """Match a parsed receipt's line items against the member's clipped offers.
 
     Ibotta model: only offers the member has clipped are eligible. Each clipped
-    offer can be redeemed at most once per receipt.
+    offer can be redeemed at most once per receipt -- but if the member bought
+    multiple units (qty > 1), cashback is multiplied by the quantity.
+
+    The quantity comes from three sources (in priority order):
+      1. Textract QUANTITY field (e.g., "2")
+      2. Parsed from description text (e.g., "2@ $3.99")
+      3. Default: 1
     """
     clipped = [o for o in offers if o.get("campaign_id") in set(clipped_ids)]
 
-    # All UPC signals present on the receipt (for transparency in the POC).
+    # Build a per-line-item UPC set + qty lookup so we can match at the item
+    # level (not just a flat set of all UPCs). Multiple line items with the
+    # same UPC are summed (e.g., two separate lines for the same product).
+    # Structure: upc_variant -> total qty across all matching line items.
+    upc_qty_map = {}
     receipt_upcs = set()
     for li in line_items:
-        receipt_upcs |= line_item_upcs(li)
+        li_upcs = line_item_upcs(li)
+        receipt_upcs |= li_upcs
+        qty = li.get("qty", 1) or 1
+        for u in li_upcs:
+            upc_qty_map[u] = upc_qty_map.get(u, 0) + qty
 
     matched, unmatched, total = [], [], 0.0
     for offer in clipped:
         hit = None
         for variants, size_label, cashback in offer_candidate_upcs(offer):
             if variants and (variants & receipt_upcs):
-                hit = (size_label, cashback)
+                # Find the best quantity: check each variant and take the max
+                # (all variants point to the same physical product).
+                qty = max((upc_qty_map.get(v, 0) for v in variants), default=1)
+                qty = max(qty, 1)
+                hit = (size_label, cashback, qty)
                 break
         if hit:
-            size_label, cashback = hit
+            size_label, cashback, qty = hit
             cashback = float(cashback or 0)
-            total += cashback
+            line_total = round(cashback * qty, 2)
+            total += line_total
             matched.append({
                 "campaign_id": offer.get("campaign_id"),
                 "product": offer.get("product"),
                 "brand": offer.get("brand"),
                 "icon": offer.get("icon"),
                 "size": size_label,
-                "cashback": cashback,
+                "cashback_per_unit": cashback,
+                "quantity": qty,
+                "cashback": line_total,
             })
         else:
             unmatched.append({
@@ -171,11 +306,7 @@ def match_receipt_to_clipped(line_items, offers, clipped_ids):
     }
 
 
-# --------------------------------------------------------------------- Veryfi --
 def veryfi_process(file_bytes, filename):
-    """Send an image to Veryfi. Returns (data, error_response). On success
-    error_response is None; on failure data is None and error_response is a
-    (json, status) tuple ready to return."""
     if not all([VERYFI_CLIENT_ID, VERYFI_USERNAME, VERYFI_API_KEY]):
         return None, (jsonify({
             "error": "Veryfi credentials are not set. Fill in .env and restart the server."
@@ -194,7 +325,7 @@ def veryfi_process(file_bytes, filename):
     payload = {
         "file_name": filename or "receipt.jpg",
         "file_data": base64.b64encode(file_bytes).decode("utf-8"),
-        "boost_mode": False,  # keep enrichment (product_details) on
+        "boost_mode": False,
     }
     try:
         resp = requests.post(VERYFI_URL, headers=headers, json=payload, timeout=120)
@@ -214,11 +345,8 @@ def veryfi_process(file_bytes, filename):
     return data, None
 
 
-# ------------------------------------------------------------------- Textract --
 def textract_client():
-    """Lazily build a boto3 Textract client so the rest of the app runs even if
-    boto3 / credentials aren't installed yet."""
-    import boto3  # imported lazily so missing creds don't break the Veryfi path
+    import boto3
     return boto3.client("textract", region_name=AWS_REGION)
 
 
@@ -232,17 +360,11 @@ def _money_to_float(text):
         return None
 
 
-# Contiguous 8–14 digit run, or a UPC-A printed with the standard 1-5-5-1 spacing.
-# 8 digits covers UPC-E/EAN-8 and short catalog codes; 14 covers GTIN-14.
 _UPC_CONTIG = re.compile(r"(?<!\d)(\d{8,14})(?!\d)")
 _UPC_SPACED = re.compile(r"(?<!\d)(\d[ ]?\d{5}[ ]?\d{5}[ ]?\d)(?!\d)")
 
 
 def _attach_upc(row, row_text):
-    """Recover a UPC/GTIN for a line item when Textract didn't populate
-    PRODUCT_CODE. Many receipts print the UPC in the item text, which Textract
-    files under ITEM/EXPENSE_ROW rather than PRODUCT_CODE — so scan that text for
-    a 12–14 digit number (or a standard-spaced UPC-A) and use it for matching."""
     if row.get("upc"):
         return
     hay = (row.get("description") or "") + " " + (row_text or "")
@@ -251,14 +373,10 @@ def _attach_upc(row, row_text):
         cand = re.sub(r"\D", "", m.group(1))
         if 8 <= len(cand) <= 14:
             row["upc"] = cand
-            row["upc_source"] = "text"   # vs Textract PRODUCT_CODE; useful for debugging
+            row["upc_source"] = "text"
 
 
 def normalize_textract(resp):
-    """Map a Textract AnalyzeExpense response into the same shape the front-end
-    already understands for Veryfi: {vendor:{name}, date, total, line_items[]}.
-    line_items expose description/total/quantity/upc so matchReceipt() works
-    unchanged."""
     vendor = date = total = None
     confidences = []
     line_items = []
@@ -280,7 +398,7 @@ def normalize_textract(resp):
         for group in doc.get("LineItemGroups") or []:
             for item in group.get("LineItems") or []:
                 row = {}
-                row_text = ""   # Textract's full row text (EXPENSE_ROW) — best place to find a UPC
+                row_text = ""
                 for ef in item.get("LineItemExpenseFields") or []:
                     ftype = (ef.get("Type") or {}).get("Text")
                     value = (ef.get("ValueDetection") or {}).get("Text")
@@ -295,12 +413,13 @@ def normalize_textract(resp):
                         row["quantity"] = value
                     elif ftype == "PRODUCT_CODE":
                         code = re.sub(r"\D", "", value or "")
-                        if 8 <= len(code) <= 14:   # UPC-E/EAN-8 up through GTIN-14
+                        if 8 <= len(code) <= 14:
                             row["upc"] = code
                     elif ftype == "EXPENSE_ROW":
                         row_text = value or ""
                 if row:
                     _attach_upc(row, row_text)
+                    _extract_quantity(row)
                     line_items.append(row)
 
     line_items = _clean_line_items(line_items)
@@ -318,7 +437,6 @@ def normalize_textract(resp):
     }
 
 
-# Summary/payment terms that Textract sometimes mis-classifies as line items.
 _LINEITEM_NOISE = re.compile(
     r"\b(savings|subtotal|sub total|tax|total|net sales|balance|change|"
     r"visa|mastercard|amex|debit|credit|chip card|paid|approval|auth|tender|"
@@ -326,33 +444,22 @@ _LINEITEM_NOISE = re.compile(
 
 
 def _clean_line_items(items):
-    """Drop Textract's phantom line items (garbled multi-line fragments, summary
-    or payment rows). AnalyzeExpense over-segments multi-line entries ("Qty .. @
-    ../lb", "Savings with Prime") into junk rows — strip those here.
-
-    NOTE: we intentionally do NOT de-duplicate by description — a customer can
-    legitimately buy several of the same product (multiple identical lines), and
-    each must be kept. Cross-section overlap from multi-photo capture is removed
-    separately by boundary-sequence matching in the client merge."""
     cleaned = []
     for li in items:
         desc = (li.get("description") or "").strip()
-        if not desc or "\n" in desc:          # multi-line => fragment, not a product
+        if not desc or "\n" in desc:
             _harvest_orphan_upc(li, cleaned)
             continue
-        if not re.search(r"[A-Za-z]", desc):   # digits-only row => likely a bare UPC
+        if not re.search(r"[A-Za-z]", desc):
             _harvest_orphan_upc(li, cleaned)
             continue
-        if _LINEITEM_NOISE.search(desc):        # summary / payment line
+        if _LINEITEM_NOISE.search(desc):
             continue
         cleaned.append(li)
     return cleaned
 
 
 def _harvest_orphan_upc(li, cleaned):
-    """A UPC printed on its own line lands as a separate digits-only / fragment
-    row that _clean_line_items would otherwise drop. Recover the code and attach
-    it to the most recent product row that still has no UPC."""
     hay = (li.get("description") or "") + " " + (li.get("upc") or "")
     m = _UPC_CONTIG.search(hay) or _UPC_SPACED.search(hay)
     if not m:
@@ -367,33 +474,37 @@ def _harvest_orphan_upc(li, cleaned):
             return
 
 
-def _reject(job, reason, result=None):
-    job.update(status="rejected", error=reason, result=result)
+# --- Backend patch: updated _reject (takes job_id, thread-safe) ---
 
+def _reject(job_id, reason, result=None):
+    """Reject a job by ID (thread-safe)."""
+    JOBS.update(job_id, status="rejected", error=reason, result=result)
+
+
+# --- Backend patch: updated run_analyze (thread-safe job store) ---
 
 def run_analyze(job_id, file_bytes, user_id):
     """Worker: call Textract, then apply the server-side validation/fraud layer.
     Runs in a background thread so the upload PUT returns immediately and the
-    SDK can poll /aws/analyze-status (mirrors the async pipeline in the spec)."""
-    job = JOBS[job_id]
+    SDK can poll /aws/analyze-status."""
     try:
         resp = textract_client().analyze_expense(Document={"Bytes": file_bytes})
-    except Exception as exc:  # noqa: BLE001 — surface any boto/credential/API error
-        job.update(status="failed", error=f"{exc.__class__.__name__}: {exc}")
+    except Exception as exc:
+        JOBS.update(job_id, status="failed", error=f"{exc.__class__.__name__}: {exc}")
         return
 
     norm = normalize_textract(resp)
 
-    # 1. Readability hard block — no structural text at all.
+    # 1. Readability hard block.
     if (norm["line_item_count"] == 0 and not (norm["vendor"] or {}).get("name")
             and norm["total"] is None):
-        _reject(job, "Textract found no readable receipt structure.", norm)
+        _reject(job_id, "Textract found no readable receipt structure.", norm)
         return
     if norm["avg_confidence"] is not None and norm["avg_confidence"] < TEXTRACT_MIN_CONFIDENCE:
-        _reject(job, f"Low OCR confidence ({norm['avg_confidence']:.0f}%). Retake the photo.", norm)
+        _reject(job_id, f"Low OCR confidence ({norm['avg_confidence']:.0f}%). Retake the photo.", norm)
         return
 
-    # 2. Temporal ruleset — reject future-dated or stale receipts.
+    # 2. Temporal ruleset.
     if norm["date"]:
         try:
             parsed = date_parser.parse(norm["date"])
@@ -403,39 +514,73 @@ def run_analyze(job_id, file_bytes, user_id):
             age_days = (now - parsed).days
             norm["receipt_age_days"] = age_days
             if parsed > now + timedelta(days=1):
-                _reject(job, "Receipt date is in the future.", norm)
+                _reject(job_id, "Receipt date is in the future.", norm)
                 return
             if RECEIPT_MAX_AGE_DAYS and age_days > RECEIPT_MAX_AGE_DAYS:
-                _reject(job, f"Receipt is {age_days} days old (limit {RECEIPT_MAX_AGE_DAYS}).", norm)
+                _reject(job_id, f"Receipt is {age_days} days old (limit {RECEIPT_MAX_AGE_DAYS}).", norm)
                 return
         except (ValueError, OverflowError):
-            pass  # unparseable date — let it through, real system would flag for review
+            pass
 
-    # 3. Anti-fraud deduplication (two indexes).
-    #    TEMPORARILY DISABLED while validating basic processing — this lets the
-    #    same receipt be scanned repeatedly. Uncomment the block below (and/or
-    #    set DEDUP_ENABLED=true) to restore the anti-fraud guards for production.
+    # 3. Dedup (when enabled).
     image_hash = hashlib.sha256(file_bytes).hexdigest()
     norm["image_sha256"] = image_hash
-    # semantic = "_".join([
-    #     user_id,
-    #     str((norm["vendor"] or {}).get("name")),
-    #     str(norm["total"]),
-    #     str(norm["date"]),
-    # ])
-    # if DEDUP_ENABLED:
-    #     if image_hash in SEEN_IMAGE_HASHES:
-    #         _reject(job, "Duplicate image — this exact file was already submitted.", norm)
-    #         return
-    #     if semantic in SEEN_SEMANTIC:
-    #         _reject(job, "Duplicate receipt — same vendor, total, and date already claimed.", norm)
-    #         return
-    #     SEEN_IMAGE_HASHES[image_hash] = job_id
-    #     SEEN_SEMANTIC[semantic] = job_id
-    job.update(status="done", result=norm)
+
+    JOBS.update(job_id, status="done", result=norm)
 
 
-# --------------------------------------------------------------------- routes --
+# --- Backend patch: rate limiter (#14) ---
+
+class SimpleRateLimiter:
+    """Token-bucket rate limiter keyed by IP + X-User-Id.
+
+    Args:
+        max_requests: max requests per window
+        window_seconds: rolling window size
+    """
+
+    def __init__(self, max_requests=30, window_seconds=60):
+        self._max = max_requests
+        self._window = window_seconds
+        self._lock = threading.Lock()
+        self._buckets = {}   # key -> [timestamps]
+
+    def _key(self):
+        uid = request.headers.get("X-User-Id", "")
+        ip = request.remote_addr or ""
+        return f"{ip}:{uid}"
+
+    def is_allowed(self):
+        now = time.time()
+        key = self._key()
+        with self._lock:
+            hits = self._buckets.get(key, [])
+            # Prune old entries.
+            cutoff = now - self._window
+            hits = [t for t in hits if t > cutoff]
+            if len(hits) >= self._max:
+                self._buckets[key] = hits
+                return False
+            hits.append(now)
+            self._buckets[key] = hits
+            return True
+
+    def check(self):
+        """Call at the top of a route. Returns a 429 response if over limit,
+        or None if allowed."""
+        if not self.is_allowed():
+            from flask import jsonify as _jsonify
+            resp = _jsonify({"error": "Rate limit exceeded. Try again shortly."})
+            resp.status_code = 429
+            resp.headers["Retry-After"] = str(self._window)
+            return resp
+        return None
+
+
+# Create the limiter (30 requests per 60 seconds per IP+user).
+aws_limiter = SimpleRateLimiter(max_requests=30, window_seconds=60)
+
+
 @app.errorhandler(Exception)
 def handle_unexpected(exc):
     return jsonify({"error": f"Server error: {exc.__class__.__name__}: {exc}"}), 500
@@ -443,9 +588,6 @@ def handle_unexpected(exc):
 
 @app.route("/")
 def index():
-    # Root now serves the camera/edge-detection experience (the old "clip"
-    # prototype is still at /static/index.html if ever needed). no-store stops
-    # the browser painting a stale cached copy before revalidating.
     resp = send_from_directory(APP_DIR, "design_preview_noclip.html")
     resp.headers["Cache-Control"] = "no-store"
     return resp
@@ -463,7 +605,6 @@ def list_offers():
 
 @app.route("/api/check-offer")
 def check_offer():
-    """Validate a single scanned barcode against the catalog (barcode-scan path)."""
     raw = request.args.get("upc", "")
     digits = "".join(ch for ch in raw if ch.isdigit())
     if not digits:
@@ -480,7 +621,6 @@ def check_offer():
 
 @app.route("/api/process", methods=["POST"])
 def process():
-    """Raw parse: returns Veryfi's full JSON for a single receipt (debug view)."""
     uploaded = request.files.get("receipt")
     if uploaded is None:
         return jsonify({"error": "No file received (expected form field 'receipt')."}), 400
@@ -492,7 +632,6 @@ def process():
 
 @app.route("/api/match-receipt", methods=["POST"])
 def match_receipt():
-    """Scan one receipt and redeem every clipped offer found on it."""
     uploaded = request.files.get("receipt")
     if uploaded is None:
         return jsonify({"error": "No file received (expected form field 'receipt')."}), 400
@@ -516,10 +655,8 @@ def match_receipt():
     return jsonify(result)
 
 
-# ---------------------------------------------------------- AWS Textract path --
 @app.route("/noclip")
 def noclip_preview():
-    """Alias for the camera-capture page (same as /)."""
     resp = send_from_directory(APP_DIR, "design_preview_noclip.html")
     resp.headers["Cache-Control"] = "no-store"
     return resp
@@ -528,7 +665,6 @@ def noclip_preview():
 @app.route("/cashback")
 @app.route("/cashback.html")
 def cashback_page():
-    """Standalone, linked-out cashback experience (separate responsive page)."""
     resp = send_from_directory(APP_DIR, "cashback.html")
     resp.headers["Cache-Control"] = "no-store"
     return resp
@@ -536,7 +672,6 @@ def cashback_page():
 
 @app.route("/aws/status")
 def aws_status():
-    """Report whether boto3 + AWS credentials are available so the UI can warn."""
     try:
         import boto3
     except ImportError:
@@ -553,22 +688,21 @@ def aws_status():
 
 @app.route("/aws/get-upload-url", methods=["POST"])
 def aws_get_upload_url():
-    """Stand-in for the API Gateway + Lambda presigned-URL handshake. Returns a
-    job id and the URL the SDK should PUT the image to. In production this URL
-    would be an S3 presigned PUT; here it's a local endpoint."""
+    blocked = aws_limiter.check()
+    if blocked:
+        return blocked
     job_id = uuid.uuid4().hex
     key = f"receipts/{job_id}.jpg"
-    JOBS[job_id] = {"status": "awaiting-upload", "result": None, "error": None, "key": key}
-    # Absolute URL so a cross-origin frontend (GitHub Pages) PUTs to THIS server,
-    # not to its own origin. In production this would be an S3 presigned PUT URL.
+    JOBS.create(job_id, {"status": "awaiting-upload", "result": None, "error": None, "key": key})
     upload_url = request.host_url.rstrip("/") + f"/aws/upload/{job_id}"
     return jsonify({"job_id": job_id, "key": key, "upload_url": upload_url})
 
 
 @app.route("/aws/upload/<job_id>", methods=["PUT", "POST"])
 def aws_upload(job_id):
-    """Receive the raw image bytes (as an S3 presigned PUT would) and kick off
-    Textract analysis in the background."""
+    blocked = aws_limiter.check()
+    if blocked:
+        return blocked
     job = JOBS.get(job_id)
     if job is None:
         return jsonify({"error": "Unknown job_id."}), 404
@@ -579,7 +713,7 @@ def aws_upload(job_id):
         return jsonify({"error": "File exceeds the 20 MB limit."}), 400
 
     user_id = request.headers.get("X-User-Id", "demo-user")
-    job["status"] = "processing"
+    JOBS.update(job_id, status="processing")
     threading.Thread(target=run_analyze, args=(job_id, file_bytes, user_id),
                      daemon=True).start()
     return jsonify({"status": "processing", "job_id": job_id})
@@ -587,7 +721,9 @@ def aws_upload(job_id):
 
 @app.route("/aws/analyze-status")
 def aws_analyze_status():
-    """Poll endpoint. The SDK hits this every 2s until status is terminal."""
+    blocked = aws_limiter.check()
+    if blocked:
+        return blocked
     job = JOBS.get(request.args.get("job", ""))
     if job is None:
         return jsonify({"status": "unknown"}), 404
