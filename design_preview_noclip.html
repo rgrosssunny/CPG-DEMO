@@ -183,13 +183,13 @@
   .fcar-track{ display:flex; transition:transform .35s var(--ease) }
   .fcar-track .feat-banner{ flex:0 0 100%; margin:0 }
   .fcar-nav{ display:flex; align-items:center; justify-content:center; gap:16px; margin:12px 0 4px }
-  /* Tablet/desktop: show all featured cards as a responsive row (2-up, then 3-up)
-     instead of one oversized banner; the swipe carousel stays on phones. */
-  @media(min-width:600px){
+  /* Desktop only: enough room to show all featured cards in one non-wrapping row.
+     Below this (tablet + mobile) we keep the single-card 5s carousel rather than
+     stacking cards onto a second row. */
+  @media(min-width:1024px){
     .fcar-vp{ overflow:visible }
-    .fcar-track{ transform:none !important; display:grid; gap:12px;
-      grid-template-columns:repeat(auto-fit,minmax(300px,1fr)) }
-    .fcar-track .feat-banner{ margin:0 }
+    .fcar-track{ transform:none !important; display:flex; flex-wrap:nowrap; gap:12px }
+    .fcar-track .feat-banner{ flex:1 1 0; min-width:0; margin:0 }
     .fcar-nav{ display:none }
   }
   .feat-banner .fb-ic{ width:76px;height:76px;flex:none;border-radius:14px;background:#fff;
