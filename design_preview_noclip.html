@@ -380,6 +380,14 @@
   .detail-label{ font-size:13px;font-weight:700;color:var(--ink-500);text-transform:uppercase;letter-spacing:.04em;margin:18px 2px 10px }
   .store-banner{ display:flex;align-items:center;gap:14px;margin:4px 2px 8px }
   .store-banner .sb-logo{ width:56px;height:56px;flex:none;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:18px }
+  /* Store-first: brand tile grid */
+  .store-grid{ display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin:12px 0 }
+  .store-tile{ background:var(--paper);border:1px solid var(--line-faint);box-shadow:var(--shadow-card);border-radius:var(--r-lg);
+    padding:16px 12px;text-align:center;cursor:pointer;transition:all var(--dur) var(--ease) }
+  .store-tile:hover{ box-shadow:var(--shadow-md);transform:translateY(-2px) }
+  .store-tile .st-logo{ width:52px;height:52px;border-radius:50%;margin:0 auto 8px;display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px }
+  .store-tile .st-name{ font-weight:800;font-size:14px;line-height:1.2 }
+  .store-tile .st-meta{ font-size:12px;color:var(--ink-500);margin-top:3px }
   .store-banner .sb-name{ font-size:19px;font-weight:800 } .store-banner .sb-meta{ font-size:13px;color:var(--ink-400);margin-top:2px }
 .previewbg{font-family:Manrope,system-ui,sans-serif;background:radial-gradient(120% 80% at 50% 0%,#e9eef1 0%,#dfe4e7 60%,#d3d8db 100%);display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:0;width:100%;box-sizing:border-box;}
 /* Responsive: full-bleed on phones, centered card on tablet/desktop.
@@ -842,38 +850,61 @@ body.cashback-only .action-bar{ display:flex }
         </div>
       </div>
 
-      <div class="section-label" style="margin-top:6px">Featured rewards</div>
+      <div class="section-label" id="featuredLabel" style="margin-top:6px">Featured rewards</div>
       <div id="featuredBanner"></div>
-      <div class="filter-bar">
-        <select id="sortSel" class="fsel" aria-label="Sort offers">
-          <option value="savings-desc">Most savings</option>
-          <option value="savings-asc">Least savings</option>
-          <option value="az">Name: A–Z</option>
-          <option value="za">Name: Z–A</option>
-        </select>
-        <select id="catSel" class="fsel" aria-label="Filter by category"></select>
-      </div>
-      <div class="offer-grid" id="offerGrid">
-        <div class="center-load" style="grid-column:1/-1"><span class="spinner dark"></span>Loading offers…</div>
-      </div>
 
-      <div class="section-label">Shop near you <button class="small" id="zipBtn" style="background:transparent;border:0;padding:0;cursor:pointer;color:var(--link);font-weight:700;font-family:inherit">📍 20814 · Change</button></div>
-      <div class="card" id="storeList"></div>
-
-      <div class="section-label">Recent submissions</div>
-      <div class="card" id="subList"></div>
-
-      <div class="section-label">Missing rewards?</div>
-      <div class="help-card" style="margin-top:0">
-        <div class="hc-ic">🎧</div>
-        <div class="hc-body">
-          <div class="hc-d">Not to worry, our Care team is here to help. <button class="hc-link" onclick="toast('Support ticket form would open here')">Submit a ticket</button></div>
+      <!-- Product-first cluster: sort/category filters + product grid -->
+      <div id="pfCluster">
+        <div class="filter-bar">
+          <select id="sortSel" class="fsel" aria-label="Sort offers">
+            <option value="savings-desc">Most savings</option>
+            <option value="savings-asc">Least savings</option>
+            <option value="az">Name: A–Z</option>
+            <option value="za">Name: Z–A</option>
+          </select>
+          <select id="catSel" class="fsel" aria-label="Filter by category"></select>
+        </div>
+        <div class="offer-grid" id="offerGrid">
+          <div class="center-load" style="grid-column:1/-1"><span class="spinner dark"></span>Loading offers…</div>
         </div>
       </div>
 
-      <div class="footer-legal">
-        The ABC Health rewards Visa® prepaid card is issued by The Bancorp Bank, N.A., pursuant to a license from Visa U.S.A. Inc.<br>
-        Reward earnings are taxable. Members are responsible for reporting reward amounts on their tax return.
+      <!-- Store-first cluster: ranked store-brand grid -->
+      <div id="storeBrandGrid" class="hidden">
+        <div class="section-label">Stores near you <button class="small zip-btn" style="background:transparent;border:0;padding:0;cursor:pointer;color:var(--link);font-weight:700;font-family:inherit">📍 20814 · Change</button></div>
+        <div class="store-grid" id="storeTiles"></div>
+      </div>
+
+      <!-- Store-first: full in-page store view (rendered on tap) -->
+      <div id="storeView" class="hidden"></div>
+
+      <div id="rewardsCommon">
+        <div id="shopNear">
+          <div class="section-label">Shop near you <button class="small zip-btn" style="background:transparent;border:0;padding:0;cursor:pointer;color:var(--link);font-weight:700;font-family:inherit">📍 20814 · Change</button></div>
+          <div class="card" id="storeList"></div>
+        </div>
+
+        <div class="section-label">Recent submissions</div>
+        <div class="card" id="subList"></div>
+
+        <div class="section-label">Missing rewards?</div>
+        <div class="help-card" style="margin-top:0">
+          <div class="hc-ic">🎧</div>
+          <div class="hc-body">
+            <div class="hc-d">Not to worry, our Care team is here to help. <button class="hc-link" onclick="toast('Support ticket form would open here')">Submit a ticket</button></div>
+          </div>
+        </div>
+
+        <div class="section-label" style="margin-top:20px">Browse experience</div>
+        <div class="seg-toggle" id="browseToggle">
+          <button class="on" data-browse="product">By product</button>
+          <button data-browse="store">By store</button>
+        </div>
+
+        <div class="footer-legal">
+          The ABC Health rewards Visa® prepaid card is issued by The Bancorp Bank, N.A., pursuant to a license from Visa U.S.A. Inc.<br>
+          Reward earnings are taxable. Members are responsible for reporting reward amounts on their tax return.
+        </div>
       </div>
     </section>
   </main>
@@ -1285,15 +1316,15 @@ disclosureScrim.addEventListener("click",e=>{ if(e.target===disclosureScrim){ pe
 $("fabReceipt").addEventListener("click",openReceipt);
 /* ZIP / location editor for the "Shop near you" list */
 const zipScrim=$("zipScrim");
-function setZipLabel(){ const b=$("zipBtn"); if(b) b.textContent="📍 "+MEMBER_ZIP+" · Change"; }
+function setZipLabel(){ document.querySelectorAll(".zip-btn").forEach(b=>b.textContent="📍 "+MEMBER_ZIP+" · Change"); }
 function openZip(){ $("zipInput").value=MEMBER_ZIP; zipScrim.classList.add("open"); setTimeout(()=>$("zipInput").focus(),60); }
 function applyZip(z){
   z=String(z||"").replace(/\D/g,"").slice(0,5);
   if(z.length!==5){ toast("Enter a 5-digit ZIP code"); return; }
-  MEMBER_ZIP=z; setZipLabel(); renderStores(); zipScrim.classList.remove("open");
+  MEMBER_ZIP=z; setZipLabel(); renderStores(); if(browseMode==="store") renderStoreTiles(); zipScrim.classList.remove("open");
   toast("Showing stores near "+MEMBER_ZIP);
 }
-$("zipBtn")?.addEventListener("click",openZip);
+document.querySelectorAll(".zip-btn").forEach(b=>b.addEventListener("click",openZip));
 $("zipSave")?.addEventListener("click",()=>applyZip($("zipInput").value));
 $("zipInput")?.addEventListener("keydown",e=>{ if(e.key==="Enter") applyZip($("zipInput").value); });
 $("zipGeo")?.addEventListener("click",()=>applyZip("20852"));
@@ -1822,6 +1853,73 @@ function openStore(id, cmp){
   const r=$("stReceipt"); if(r) r.addEventListener("click",()=>{ storeScrim.classList.remove("open"); openReceipt(); });
   $("stClose").addEventListener("click",()=>storeScrim.classList.remove("open"));
 }
+
+/* ===== Browse experience: product-first (default) vs store-first (Ibotta-style) ===== */
+let browseMode="product";
+function renderStoreTiles(){
+  const el=$("storeTiles"); if(!el) return;
+  const tiles=STORES.slice().sort((a,b)=>nearestDist(a)-nearestDist(b));
+  el.innerHTML=tiles.map(s=>{
+    const n = state.offers.length ? s.carries.filter(c=>state.offers.some(o=>o.campaign_id===c)).length : s.carries.length;
+    return `<div class="store-tile" data-store="${esc(s.id)}">
+      <div class="st-logo" style="background:${s.color}">${esc(s.short)}</div>
+      <div class="st-name">${esc(s.name)}</div>
+      <div class="st-meta">${n} offer${n===1?"":"s"} · ${fmtMi(nearestDist(s))}</div>
+    </div>`;
+  }).join("");
+  el.querySelectorAll(".store-tile[data-store]").forEach(t=>t.addEventListener("click",()=>openStoreView(t.dataset.store)));
+}
+function openStoreView(id){
+  const s=STORES.find(x=>x.id===id); if(!s) return;
+  const locs=(s.locations||[]).slice().sort((a,b)=>a.dist-b.dist).slice(0,3);
+  const locHtml=locs.map(l=>`<div class="store"><div class="logo" style="background:${s.color}">${esc(s.short)}</div><div class="b"><div class="n">${esc(s.name)}</div><div class="m">${esc(l.address)} · ${fmtMi(l.dist)}</div></div><button class="btn btn-ghost" style="width:auto;padding:8px 12px;font-size:12px;white-space:nowrap" onclick="toast('Opening directions…')">Directions</button></div>`).join("");
+  const carried=s.carries.map(getOffer).filter(Boolean);
+  const grid=carried.length?carried.map(o=>`
+    <div class="offer clickable" data-cmp="${esc(o.campaign_id)}">
+      <div class="ic">${o.image?`<img src="${esc(o.image)}" alt="${esc(o.product||'')}">`:(o.icon||"🛒")}</div>
+      <div class="brand-n">${esc(o.brand||"")}</div>
+      <div class="prod">${esc(o.product||"")}</div>
+      <div class="cb">${cbDisplay(o)}</div>
+      <div class="exp">${o.expires?("Expires "+fmtExp(o.expires)):""}</div>
+    </div>`).join(""):`<div class="center-load" style="grid-column:1/-1">No offers at this store yet.</div>`;
+  $("storeView").innerHTML=`
+    <button class="btn btn-ghost" id="svBack" style="width:auto;padding:8px 14px;margin:2px 0 12px">‹ All stores</button>
+    <div class="store-banner">
+      <div class="sb-logo" style="background:${s.color}">${esc(s.short)}</div>
+      <div><div class="sb-name">${esc(s.name)}</div><div class="sb-meta">Near ${esc(MEMBER_ZIP)} · ${s.locations.length} locations</div></div>
+    </div>
+    <div class="detail-label">Closest locations</div>
+    <div class="card">${locHtml}</div>
+    <div class="detail-label">Rewards offers here</div>
+    <div class="offer-grid">${grid}</div>`;
+  $("featuredLabel").classList.add("hidden"); $("featuredBanner").classList.add("hidden");
+  $("pfCluster").classList.add("hidden"); $("storeBrandGrid").classList.add("hidden"); $("rewardsCommon").classList.add("hidden");
+  $("storeView").classList.remove("hidden");
+  $("storeView").querySelectorAll(".offer[data-cmp]").forEach(el=>el.addEventListener("click",()=>openOffer(el.dataset.cmp)));
+  $("svBack").addEventListener("click",()=>setBrowse("store"));
+  const m=document.querySelector("main"); if(m) m.scrollTop=0;
+}
+function setBrowse(mode){
+  browseMode=mode; try{localStorage.setItem("cpgBrowse",mode);}catch(e){}
+  document.querySelectorAll("#browseToggle button").forEach(b=>b.classList.toggle("on",b.dataset.browse===mode));
+  const store=mode==="store";
+  const sv=$("storeView"); if(sv){ sv.classList.add("hidden"); sv.innerHTML=""; }
+  $("featuredLabel").classList.remove("hidden"); $("featuredBanner").classList.remove("hidden");
+  $("rewardsCommon").classList.remove("hidden");
+  $("pfCluster").classList.toggle("hidden", store);
+  $("storeBrandGrid").classList.toggle("hidden", !store);
+  $("shopNear").classList.toggle("hidden", store);
+  if(store) renderStoreTiles();
+  const m=document.querySelector("main"); if(m) m.scrollTop=0;
+}
+document.querySelectorAll("#browseToggle button").forEach(b=>b.addEventListener("click",()=>setBrowse(b.dataset.browse)));
+(function(){
+  let m="product";
+  try{ m=localStorage.getItem("cpgBrowse")||"product"; }catch(e){}
+  const pm=(location.search.match(/[?&]browse=(product|store)\b/)||[])[1];
+  if(pm) m=pm;
+  if(m==="store") setBrowse("store");
+})();
 
 /* ===== Standalone "Cash Back site" mode =====================================
    When reached via ?view=cashback (the disclosure-gated link-out), render only
