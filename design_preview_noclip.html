@@ -388,6 +388,19 @@
   .store-tile .st-logo{ width:52px;height:52px;border-radius:50%;margin:0 auto 8px;display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px }
   .store-tile .st-name{ font-weight:800;font-size:14px;line-height:1.2 }
   .store-tile .st-meta{ font-size:12px;color:var(--ink-500);margin-top:3px }
+  /* Bonus / "earn more" rows */
+  .bonus{ display:flex;gap:12px;align-items:flex-start;padding:14px 4px }
+  .bonus + .bonus{ border-top:1px solid var(--line-faint) }
+  .bonus .bonus-ic{ width:40px;height:40px;flex:none;border-radius:12px;display:grid;place-items:center;font-size:20px;background:var(--brand-50, #eef6f4) }
+  .bonus .bonus-body{ flex:1;min-width:0 }
+  .bonus .bonus-top{ display:flex;align-items:center;justify-content:space-between;gap:10px }
+  .bonus .bonus-title{ font-weight:800;font-size:14px }
+  .bonus .bonus-amt{ flex:none;font-weight:800;font-size:13px;color:var(--brand,#0b7a6b);background:var(--brand-50,#eef6f4);border-radius:999px;padding:3px 10px;white-space:nowrap }
+  .bonus.done .bonus-amt{ color:#fff;background:var(--brand,#0b7a6b) }
+  .bonus .bonus-track{ height:8px;border-radius:999px;background:var(--line-faint,#e6eae9);margin:8px 0 5px;overflow:hidden }
+  .bonus .bonus-fill{ display:block;height:100%;border-radius:999px;background:var(--brand,#0b7a6b);transition:width var(--dur) var(--ease) }
+  .bonus .bonus-meta{ font-size:12px;color:var(--ink-500) }
+  .bonus .bonus-meta strong{ color:var(--ink-900,#111) }
   .store-banner .sb-name{ font-size:19px;font-weight:800 } .store-banner .sb-meta{ font-size:13px;color:var(--ink-400);margin-top:2px }
 .previewbg{font-family:Manrope,system-ui,sans-serif;background:radial-gradient(120% 80% at 50% 0%,#e9eef1 0%,#dfe4e7 60%,#d3d8db 100%);display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:0;width:100%;box-sizing:border-box;}
 /* Responsive: full-bleed on phones, centered card on tablet/desktop.
@@ -867,12 +880,18 @@ body.cashback-only .action-bar{ display:flex }
         <div class="offer-grid" id="offerGrid">
           <div class="center-load" style="grid-column:1/-1"><span class="spinner dark"></span>Loading offers…</div>
         </div>
+
+        <div class="section-label">Get more rewards with bonuses</div>
+        <div class="card" id="bonusesProduct"></div>
       </div>
 
       <!-- Store-first cluster: ranked store-brand grid -->
       <div id="storeBrandGrid" class="hidden">
         <div class="section-label">Stores near you <button class="small zip-btn" style="background:transparent;border:0;padding:0;cursor:pointer;color:var(--link);font-weight:700;font-family:inherit">📍 20814 · Change</button></div>
         <div class="store-grid" id="storeTiles"></div>
+
+        <div class="section-label">Get more rewards with bonuses</div>
+        <div class="card" id="bonusesStore"></div>
       </div>
 
       <!-- Store-first: full in-page store view (rendered on tap) -->
@@ -1854,6 +1873,28 @@ function openStore(id, cmp){
   $("stClose").addEventListener("click",()=>storeScrim.classList.remove("open"));
 }
 
+/* ===== "Get more rewards with bonuses" (demo progress; prototype-only) ===== */
+const BONUSES=[
+  {id:"b5",   icon:"🎁", amt:"$5 back", title:"Claim any 5 offers",          have:2, need:5},
+  {id:"b2",   icon:"⭐", amt:"$2 back", title:"Claim any 2 offers",          have:1, need:2},
+  {id:"bband",icon:"🩹", amt:"$3 back", title:"Claim a Band-Aid offer 2 times", have:1, need:2},
+];
+function bonusRow(b){
+  const done=b.have>=b.need, pct=Math.min(100,Math.round(b.have/b.need*100));
+  return `<div class="bonus${done?" done":""}">
+    <div class="bonus-ic">${b.icon}</div>
+    <div class="bonus-body">
+      <div class="bonus-top"><span class="bonus-title">${esc(b.title)}</span><span class="bonus-amt">${esc(b.amt)}</span></div>
+      <div class="bonus-track"><span class="bonus-fill" style="width:${pct}%"></span></div>
+      <div class="bonus-meta">${done?"<strong>Complete!</strong> Reward on the way":`<strong>${b.have} of ${b.need}</strong> claimed`}</div>
+    </div>
+  </div>`;
+}
+function renderBonuses(){
+  const html=BONUSES.map(bonusRow).join("");
+  ["bonusesProduct","bonusesStore"].forEach(id=>{ const el=$(id); if(el) el.innerHTML=html; });
+}
+
 /* ===== Browse experience: product-first (default) vs store-first (Ibotta-style) ===== */
 let browseMode="product";
 function renderStoreTiles(){
@@ -1913,6 +1954,7 @@ function setBrowse(mode){
   const m=document.querySelector("main"); if(m) m.scrollTop=0;
 }
 document.querySelectorAll("#browseToggle button").forEach(b=>b.addEventListener("click",()=>setBrowse(b.dataset.browse)));
+renderBonuses();
 (function(){
   let m="product";
   try{ m=localStorage.getItem("cpgBrowse")||"product"; }catch(e){}
