@@ -173,9 +173,14 @@
     cursor:pointer;background:var(--cream-warm);color:var(--action) }
   .offer .clip:hover{ background:#e7e0cf }
   .offer .clip.on{ background:var(--action);color:#fff }
+  /* Featured rewards — distinct tinted hero panel */
+  .feat-section{ background:linear-gradient(180deg,#e4f3f8,#f5fbfd);
+    border:1px solid #d3e9f0; border-radius:var(--r-xl);
+    padding:14px 14px 8px; margin:8px 0 6px; box-shadow:inset 0 1px 0 rgba(255,255,255,.7) }
+  .feat-section .section-label{ margin:2px 4px 0; color:var(--brand-2) }
   /* Featured rewards — image-forward "poster" shelf (swipeable) */
   .poster-shelf{ display:flex; gap:14px; overflow-x:auto; scroll-snap-type:x mandatory;
-    -webkit-overflow-scrolling:touch; margin-top:12px; padding:2px 0 6px; scrollbar-width:none }
+    -webkit-overflow-scrolling:touch; margin-top:10px; padding:2px 0 4px; scrollbar-width:none }
   .poster-shelf::-webkit-scrollbar{ display:none }
   .poster{ scroll-snap-align:start; flex:0 0 61%; max-width:230px; cursor:pointer;
     background:var(--paper); border-radius:var(--r-lg); overflow:hidden; box-shadow:var(--shadow-card);
@@ -871,8 +876,10 @@ body.cashback-only .action-bar{ display:flex }
         </div>
       </div>
 
-      <div class="section-label" id="featuredLabel" style="margin-top:6px">Featured rewards</div>
-      <div id="featuredBanner"></div>
+      <div class="feat-section" id="featuredSection">
+        <div class="section-label" id="featuredLabel">Featured rewards</div>
+        <div id="featuredBanner"></div>
+      </div>
 
       <!-- Product-first cluster: sort/category filters + product grid -->
       <div id="pfCluster">
@@ -1948,7 +1955,7 @@ function openStoreView(id){
     <div class="card">${locHtml}</div>
     <div class="detail-label">Rewards offers here</div>
     <div class="offer-grid">${grid}</div>`;
-  $("featuredLabel").classList.add("hidden"); $("featuredBanner").classList.add("hidden");
+  $("featuredSection").classList.add("hidden");
   $("pfCluster").classList.add("hidden"); $("storeBrandGrid").classList.add("hidden"); $("rewardsCommon").classList.add("hidden");
   $("storeView").classList.remove("hidden");
   $("storeView").querySelectorAll(".offer[data-cmp]").forEach(el=>el.addEventListener("click",()=>openOffer(el.dataset.cmp)));
@@ -1960,7 +1967,7 @@ function setBrowse(mode){
   document.querySelectorAll("#browseToggle button").forEach(b=>b.classList.toggle("on",b.dataset.browse===mode));
   const store=mode==="store";
   const sv=$("storeView"); if(sv){ sv.classList.add("hidden"); sv.innerHTML=""; }
-  $("featuredLabel").classList.remove("hidden"); $("featuredBanner").classList.remove("hidden");
+  $("featuredSection").classList.remove("hidden");
   $("rewardsCommon").classList.remove("hidden");
   $("pfCluster").classList.toggle("hidden", store);
   $("storeBrandGrid").classList.toggle("hidden", !store);
