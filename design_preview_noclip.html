@@ -1026,12 +1026,31 @@ const state = {
 };
 
 /* stores — which campaigns each carries (Ibotta-style "shop near you") */
+/* Retailer brands. Each carries a set of offers and has several nearby locations
+   (ordered by distance from the member's ZIP). "Where to buy" ranks brands by
+   their nearest location; store-level addresses are shown only on drill-down. */
+const MEMBER_ZIP = "20814";
 const STORES = [
-  { id:"cvs",     name:"CVS Pharmacy",        short:"CVS", color:"#CC0000", distance:"0.4 mi", address:"7809 Wisconsin Ave, Bethesda", carries:["CMP-1002","CMP-1004","CMP-1005","CMP-1007"] },
-  { id:"walmart", name:"Walmart Supercenter", short:"W",   color:"#0071CE", distance:"1.2 mi", address:"11181 Veirs Mill Rd, Wheaton",  carries:["CMP-1002","CMP-1004","CMP-1005","CMP-1001","CMP-1003","CMP-1006","CMP-1007","CMP-1008"] },
-  { id:"giant",   name:"Giant Food",          short:"G",   color:"#E11A2C", distance:"1.6 mi", address:"6204 Tuckerman Ln, North Bethesda", carries:["CMP-1001","CMP-1003","CMP-1006","CMP-1008"] },
-  { id:"costco",  name:"Costco Wholesale",    short:"C",   color:"#005DAA", distance:"3.1 mi", address:"7800 Wisconsin Ave, Bethesda", carries:["CMP-1004","CMP-1006","CMP-1002","CMP-1008"] },
+  { id:"cvs",     name:"CVS Pharmacy",        short:"CVS", color:"#C8102E",
+    carries:["CMP-1002","CMP-1004","CMP-1005","CMP-1007","CMP-1009","CMP-1010","CMP-1011","CMP-1012","CMP-1013"],
+    locations:[ {address:"7809 Wisconsin Ave, Bethesda", dist:0.4}, {address:"6917 Arlington Rd, Bethesda", dist:1.1}, {address:"11325 Rockville Pike, Rockville", dist:2.6} ] },
+  { id:"walgreens", name:"Walgreens",         short:"WAG", color:"#E31837",
+    carries:["CMP-1002","CMP-1004","CMP-1005","CMP-1009","CMP-1010","CMP-1011","CMP-1012","CMP-1013"],
+    locations:[ {address:"6832 Wisconsin Ave, Bethesda", dist:0.7}, {address:"12000 Rockville Pike, Rockville", dist:1.9}, {address:"4555 Wisconsin Ave NW, Washington", dist:3.0} ] },
+  { id:"target",  name:"Target",             short:"T",   color:"#CC0000",
+    carries:["CMP-1001","CMP-1002","CMP-1004","CMP-1005","CMP-1006","CMP-1009","CMP-1010","CMP-1011","CMP-1013"],
+    locations:[ {address:"10500 Auto Park Ave, Bethesda", dist:1.5}, {address:"11160 Veirs Mill Rd, Wheaton", dist:3.2}, {address:"3100 14th St NW, Washington", dist:4.1} ] },
+  { id:"walmart", name:"Walmart Supercenter", short:"W",  color:"#0071CE",
+    carries:["CMP-1001","CMP-1002","CMP-1003","CMP-1004","CMP-1005","CMP-1006","CMP-1007","CMP-1008","CMP-1009","CMP-1010","CMP-1011","CMP-1012","CMP-1013"],
+    locations:[ {address:"11181 Veirs Mill Rd, Wheaton", dist:1.2}, {address:"1435 Rockville Pike, Rockville", dist:4.5}, {address:"3549 Russett Grn, Laurel", dist:6.0} ] },
+  { id:"giant",   name:"Giant Food",          short:"G",   color:"#E11A2C",
+    carries:["CMP-1001","CMP-1002","CMP-1003","CMP-1006","CMP-1008","CMP-1013"],
+    locations:[ {address:"6204 Tuckerman Ln, North Bethesda", dist:1.6}, {address:"7142 Arlington Rd, Bethesda", dist:2.4}, {address:"1345 Park Rd NW, Washington", dist:3.8} ] },
+  { id:"costco",  name:"Costco Wholesale",    short:"C",   color:"#005DAA",
+    carries:["CMP-1002","CMP-1004","CMP-1006","CMP-1008"],
+    locations:[ {address:"1701 Rockville Pike, Rockville", dist:3.1}, {address:"1200 S Fern St, Arlington", dist:7.2}, {address:"10925 McGaw Rd, Columbia", dist:9.0} ] },
 ];
+STORES.forEach(s=>{ const n=Math.min(...s.locations.map(l=>l.dist)); s._near=n; s.distance=n.toFixed(1)+" mi"; s.address=s.locations[0].address; });
 
 /* Embedded copy of offers.json so the design renders when opened directly as a
    file:// page (no server). When served by Flask, the live /api/offers wins. */
@@ -1682,7 +1701,10 @@ const offerScrim=$("offerScrim"), storeScrim=$("storeScrim");
 offerScrim.addEventListener("click",e=>{ if(e.target===offerScrim) offerScrim.classList.remove("open"); });
 storeScrim.addEventListener("click",e=>{ if(e.target===storeScrim) storeScrim.classList.remove("open"); });
 function getOffer(cmp){ return state.offers.find(o=>o.campaign_id===cmp); }
-function storesForOffer(cmp){ return STORES.filter(s=>s.carries.includes(cmp)); }
+function nearestDist(s){ return s._near!=null?s._near:Math.min(...(s.locations||[{dist:99}]).map(l=>l.dist)); }
+function fmtMi(d){ return d.toFixed(1)+" mi"; }
+function brandLabel(s){ return s.name.split(" ")[0]; }
+function storesForOffer(cmp){ return STORES.filter(s=>s.carries.includes(cmp)).sort((a,b)=>nearestDist(a)-nearestDist(b)); }
 
 function openOffer(cmp){
   const o=getOffer(cmp); if(!o) return;
@@ -1694,9 +1716,12 @@ function openOffer(cmp){
       <div class="sz-c">${money(s.cashback)}</div>
     </div>`).join("");
   const stores=storesForOffer(cmp);
-  const storesHtml=stores.length?stores.map(s=>`
-    <span class="mini-store" data-store="${s.id}"><span class="ms-dot" style="background:${s.color}">${esc(s.short)}</span>${esc(s.name.split(" ")[0])} · ${esc(s.distance)}</span>`).join("")
-    :`<span class="muted small">No nearby stores listed.</span>`;
+  const CAP=4;
+  const chip=s=>`<span class="mini-store" data-brand="${s.id}"><span class="ms-dot" style="background:${s.color}">${esc(s.short)}</span>${esc(brandLabel(s))} · ${fmtMi(nearestDist(s))}</span>`;
+  const storesHtml=stores.length
+    ? `<div id="wtbChips">`+stores.slice(0,CAP).map(chip).join("")
+        +(stores.length>CAP?`<span class="mini-store more" id="wtbMore" style="color:var(--ink-500)">+${stores.length-CAP} more</span>`:``)+`</div>`
+    : `<span class="muted small">No participating stores near you.</span>`;
 
   $("offerDetail").innerHTML=`
     <div class="detail-hero">
@@ -1709,19 +1734,49 @@ function openOffer(cmp){
         :`<div class="banner info">${esc(o.tagline||"")} · Expires ${fmtExp(o.expires)}</div>`}
     <div class="detail-label">Qualifying sizes</div>
     ${sizesHtml}
-    <div class="detail-label">Where to buy</div>
+    <div class="detail-label">Where to buy <span class="muted" style="font-weight:600;text-transform:none;letter-spacing:0">near ${esc(MEMBER_ZIP)}</span></div>
     <div style="margin:0 2px">${storesHtml}</div>
     ${ex?"":`
     <button class="btn btn-primary btn-block" style="margin-top:18px" id="odReceipt">Snap a receipt to earn</button>`}
     <button class="btn ${ex?"btn-primary":"btn-ghost"} btn-block" style="margin-top:10px" id="odClose">Close</button>`;
 
   offerScrim.classList.add("open");
-  $("offerDetail").querySelectorAll(".mini-store[data-store]").forEach(el=>{
-    el.addEventListener("click",()=>{ offerScrim.classList.remove("open"); openStore(el.dataset.store); });
-  });
+  function wireBrands(){
+    $("offerDetail").querySelectorAll(".mini-store[data-brand]").forEach(el=>{
+      el.addEventListener("click",()=>{ offerScrim.classList.remove("open"); openBrandLocations(el.dataset.brand, cmp); });
+    });
+  }
+  wireBrands();
+  const more=$("wtbMore");
+  if(more) more.addEventListener("click",()=>{ $("wtbChips").innerHTML=stores.map(chip).join(""); wireBrands(); });
   const r=$("odReceipt");
   if(r) r.addEventListener("click",()=>{ offerScrim.classList.remove("open"); openReceipt(); });
   $("odClose").addEventListener("click",()=>offerScrim.classList.remove("open"));
+}
+
+function openBrandLocations(brandId, cmp){
+  const s=STORES.find(x=>x.id===brandId); if(!s) return;
+  const o=cmp?getOffer(cmp):null;
+  const locs=(s.locations||[]).slice().sort((a,b)=>a.dist-b.dist).slice(0,3);
+  const rows=locs.map(l=>`
+    <div class="store">
+      <div class="logo" style="background:${s.color}">${esc(s.short)}</div>
+      <div class="b"><div class="n">${esc(s.name)}</div><div class="m">${esc(l.address)} · ${fmtMi(l.dist)}</div></div>
+      <button class="btn btn-ghost" style="width:auto;padding:8px 12px;font-size:12px;white-space:nowrap" onclick="toast('Opening directions…')">Directions</button>
+    </div>`).join("");
+  $("storeDetail").innerHTML=`
+    <div class="store-banner">
+      <div class="sb-logo" style="background:${s.color}">${esc(s.short)}</div>
+      <div><div class="sb-name">${esc(s.name)}</div><div class="sb-meta">Near ${esc(MEMBER_ZIP)} · ${s.locations.length} locations</div></div>
+    </div>
+    ${o?`<div class="banner info">Buy ${esc(o.brand||o.product)} here, then snap your receipt to earn ${esc(cbDisplay(o))}.</div>`:``}
+    <div class="detail-label">Closest locations</div>
+    <div class="card">${rows}</div>
+    ${o?`<button class="btn btn-primary btn-block" style="margin-top:14px" id="blReceipt">Snap a receipt to earn</button>`:``}
+    <button class="btn btn-ghost btn-block" style="margin-top:10px" id="blClose">Close</button>`;
+  storeScrim.classList.add("open");
+  const r=$("blReceipt"); if(r) r.addEventListener("click",()=>{ storeScrim.classList.remove("open"); openReceipt(); });
+  $("blClose").addEventListener("click",()=>storeScrim.classList.remove("open"));
 }
 
 function openStore(id){
