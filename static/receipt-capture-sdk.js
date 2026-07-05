@@ -200,7 +200,14 @@
 .rcap-root{position:fixed;inset:0;z-index:2147483000;background:#000;overflow:hidden;
   font-family:Manrope,system-ui,-apple-system,sans-serif;color:#fff;-webkit-user-select:none;user-select:none}
 .rcap-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
-.rcap-reticle{position:absolute;top:11%;bottom:0;left:8%;right:8%;pointer-events:none}
+.rcap-reticle{position:absolute;top:11%;bottom:0;left:8%;right:8%;pointer-events:none;z-index:2;
+  box-shadow:0 0 0 100vmax rgba(0,0,0,.45)}
+.rcap-reticle::before,.rcap-reticle::after{content:"";position:absolute;top:-3px;width:30px;height:30px;
+  border:3px solid rgba(255,255,255,.95)}
+.rcap-reticle::before{left:-3px;border-right:0;border-bottom:0;border-top-left-radius:10px}
+.rcap-reticle::after{right:-3px;border-left:0;border-bottom:0;border-top-right-radius:10px}
+.rcap-root[data-cont="1"] .rcap-reticle::before,
+.rcap-root[data-cont="1"] .rcap-reticle::after{display:none}
 .rcap-rail{position:absolute;z-index:3;pointer-events:none}
 .rcap-rail.v{top:11%;bottom:0;width:0;border-left:3px solid ${AMBER}}
 .rcap-rail.v.on{border-left-color:${GREEN}}
@@ -215,9 +222,9 @@
 .rcap-pill .badge{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;
   background:rgba(0,0,0,.18);font-size:10px;line-height:1}
 .rcap-rail.v .rcap-pill{top:42%;writing-mode:vertical-rl}
-.rcap-rail.v.left .rcap-pill{left:5px;transform:rotate(180deg)}
-.rcap-rail.v.right .rcap-pill{right:5px}
-.rcap-rail.h .rcap-pill{left:50%;top:6px;transform:translateX(-50%)}
+.rcap-rail.v.left .rcap-pill{left:0;transform:translateX(-50%) rotate(180deg)}
+.rcap-rail.v.right .rcap-pill{right:0;transform:translateX(50%)}
+.rcap-rail.h .rcap-pill{left:50%;top:0;transform:translate(-50%,-50%)}
 .rcap-overlap{position:absolute;top:9%;left:8%;right:8%;height:60px;object-fit:cover;object-position:bottom;
   z-index:4;border-bottom:2px dashed ${GREEN};filter:hue-rotate(280deg) saturate(1.4);opacity:.92}
 .rcap-still{position:absolute;top:9%;left:8%;right:8%;height:78%;object-fit:contain;border-radius:6px;background:#111}

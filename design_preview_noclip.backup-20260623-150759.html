@@ -1,0 +1,1358 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ABC Health — Cash Back (No-Clip)</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="static/receipt-capture-sdk.js?v=15"></script>
+<style>
+  :root{
+    /* Brand — ABC Health (from design.sunnybenefits.com) */
+    --brand:#1DB0C9; --brand-2:#173D53;
+    --cream:#F9F7F1; --cream-warm:#F1EDDF; --paper:#FFFFFF;
+    --ink-900:#020817; --ink-700:#083344; --ink-500:#575757; --ink-400:#80808A;
+    --line:#C4C4C4; --line-soft:#E2E8F0; --line-faint:#EFF0F0;
+    --action:#2269B5; --action-hover:#1F5CA1; --link:#0078B3;
+    --success:#1E8A4F; --success-bg:#DCFCE7;
+    --danger:#B91C1C; --danger-bg:#FEE2E2;
+    --warning:#C15710; --warning-bg:#FEF3C7;
+    --info-bg:#E0F2FE;
+    --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:24px; --r-pill:999px;
+    --shadow-card:0 1px 2px rgba(20,20,23,.04),0 1px 3px rgba(20,20,23,.06);
+    --shadow-md:0 4px 12px rgba(20,20,23,.08),0 2px 4px rgba(20,20,23,.04);
+    --shadow-pop:0 10px 30px rgba(20,20,23,.12),0 2px 8px rgba(20,20,23,.08);
+    --ease:cubic-bezier(.22,1,.36,1); --dur:220ms;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:Manrope,system-ui,sans-serif; color:var(--ink-900);
+    background:radial-gradient(120% 80% at 50% 0%,#e9eef1 0%,#dfe4e7 60%,#d3d8db 100%);
+    display:flex; justify-content:center; align-items:flex-start; min-height:100vh;
+  }
+  /* device shell */
+  .device{
+    width:100%; max-width:440px; min-height:100vh; background:var(--cream);
+    box-shadow:var(--shadow-pop); position:relative; overflow:hidden;
+    display:flex; flex-direction:column;
+  }
+  @media(min-width:480px){ .device{ margin:24px 0; min-height:calc(100vh - 48px); border-radius:32px; } }
+
+  /* App bar */
+  .appbar{
+    height:64px; display:flex; align-items:center; justify-content:space-between;
+    padding:0 16px; background:var(--paper); border-bottom:1px solid var(--line-faint);
+    position:sticky; top:0; z-index:20;
+  }
+  .iconbtn{ width:40px;height:40px;border:0;background:transparent;border-radius:var(--r-pill);
+    display:grid;place-items:center;cursor:pointer;color:var(--ink-700) }
+  .iconbtn:hover{ background:var(--line-faint) }
+  .brand{ display:flex;align-items:center;gap:7px;font-weight:800;font-size:18px;color:var(--ink-900) }
+  .brand .spark{ color:var(--brand);font-size:18px }
+
+  /* Segmented tabs */
+  .seg-tabs{ display:flex; gap:4px; padding:8px; margin:0; background:var(--cream);
+    border-bottom:1px solid var(--line-faint); position:sticky; top:64px; z-index:19 }
+  .seg-tab{ flex:1; border:0; background:transparent; padding:10px 0; border-radius:var(--r-md);
+    font-family:inherit; font-size:15px; font-weight:600; color:var(--ink-500); cursor:pointer;
+    transition:all var(--dur) var(--ease) }
+  .seg-tab.active{ background:var(--paper); color:var(--ink-900); box-shadow:var(--shadow-card) }
+
+  main{ flex:1; overflow-y:auto; padding:18px 16px 40px }
+  .tab-panel{ display:none; animation:fade .3s var(--ease) }
+  .tab-panel.active{ display:block }
+  @keyframes fade{ from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+
+  h1.page{ font-size:21px; font-weight:800; margin:4px 2px 6px; letter-spacing:-.02em }
+  .section-label{ display:flex;align-items:center;justify-content:space-between;
+    margin:12px 2px; font-size:18px; font-weight:700 }
+  .muted{ color:var(--ink-500) }
+  .small{ font-size:13px }
+
+  .card{ background:var(--paper); border-radius:var(--r-lg); box-shadow:var(--shadow-card); }
+  .card.pad{ padding:16px }
+
+  /* Overview: prepaid card + balance */
+  .balance-row{ display:flex; align-items:center; gap:16px; padding:4px 4px 2px }
+  .visa{ width:96px;height:62px;border-radius:10px;flex:none;position:relative;overflow:hidden;
+    background:linear-gradient(135deg,var(--brand-2),var(--brand));
+    box-shadow:var(--shadow-md); color:#fff }
+  .visa .v-top{ font-size:8px;font-weight:700;padding:8px 8px 0;letter-spacing:.02em }
+  .visa .v-chip{ width:14px;height:10px;border-radius:2px;background:#ffd87a;margin:8px 0 0 8px }
+  .visa .v-visa{ position:absolute;right:8px;bottom:6px;font-style:italic;font-weight:800;font-size:13px }
+  .bal-label{ font-size:14px; color:var(--ink-500); font-weight:600 }
+  .bal-amt{ font-size:34px; font-weight:800; letter-spacing:-.02em; line-height:1.1 }
+  .bal-amt sup{ font-size:18px; top:-.7em; font-weight:700 }
+
+  .reward-row{ display:flex;align-items:center;justify-content:space-between;
+    padding:14px 16px; cursor:pointer }
+  .reward-row+.reward-row{ border-top:1px solid var(--line-faint) }
+  .reward-row:hover{ background:var(--cream-soft,#FAF8F2) }
+  .reward-row .title{ font-weight:700;font-size:15px }
+  .reward-row .sub{ font-size:12.5px;color:var(--ink-400);margin-top:2px }
+  .amt{ font-weight:800;font-size:18px } .amt sup{font-size:11px;top:-.6em}
+  .chev{ color:var(--ink-400);margin-left:10px }
+
+  .progress-card{ background:var(--cream-warm); border-radius:var(--r-lg); padding:16px }
+  .progress-card .top{ font-weight:700;font-size:15px;margin-bottom:10px }
+  .bar{ height:10px;border-radius:var(--r-pill);background:#e6e0cf;overflow:hidden }
+  .bar > i{ display:block;height:100%;border-radius:var(--r-pill);
+    background:var(--brand-2) }
+  .bar-ends{ display:flex;justify-content:space-between;font-size:12px;color:var(--ink-500);margin-top:6px }
+
+  .promo{ position:relative; overflow:hidden; border-radius:var(--r-lg); padding:18px;
+    color:#fff; background:linear-gradient(120deg,var(--brand-2),var(--brand)); }
+  .promo h3{ margin:0 0 6px;font-size:16px;font-weight:800 }
+  .promo p{ margin:0 0 14px;font-size:13px;opacity:.95;max-width:78% }
+  .promo .emoji{ position:absolute; right:-6px; bottom:-6px; font-size:74px; opacity:.85; transform:rotate(-8deg) }
+
+  .btn{ border:0;border-radius:var(--r-pill);font-family:inherit;font-weight:700;font-size:14px;
+    cursor:pointer;padding:11px 18px;display:inline-flex;align-items:center;gap:6px;transition:all var(--dur) var(--ease) }
+  .btn-light{ background:#fff;color:var(--brand-2) } .btn-light:hover{ background:#f0f0f0 }
+  .btn-primary{ background:var(--action);color:#fff } .btn-primary:hover{ background:var(--action-hover) }
+  .btn-primary:disabled{ background:#B7C6DA;cursor:not-allowed }
+  .btn-ghost{ background:var(--line-faint);color:var(--ink-900) } .btn-ghost:hover{ background:var(--line-soft) }
+  .btn-brand{ background:var(--brand-2);color:#fff } .btn-brand:hover{ filter:brightness(1.1) }
+  .btn-block{ width:100%; justify-content:center; padding:14px }
+
+  /* horizontal scroll cards */
+  .hscroll{ display:flex; gap:12px; overflow-x:auto; padding:2px 4px 8px; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch }
+  .hscroll::-webkit-scrollbar{ display:none }
+  .feat{ flex:none; width:220px; scroll-snap-align:start; background:var(--paper);
+    border-radius:var(--r-lg); box-shadow:var(--shadow-card); padding:12px; display:flex; gap:12px; align-items:center }
+  .feat .tile{ width:54px;height:54px;flex:none;border-radius:var(--r-md);display:grid;place-items:center;
+    font-weight:800;color:#fff;background:var(--brand) } .feat .tile sup{font-size:11px}
+  .feat .ttl{ font-weight:700;font-size:13.5px;line-height:1.25 }
+
+  .tag{ display:inline-block;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    padding:3px 7px;border-radius:6px;background:var(--info-bg);color:var(--brand-2);margin:6px 5px 0 0 }
+  .tag.gray{ background:var(--line-faint);color:var(--ink-500) }
+  .tag.warn{ background:var(--warning-bg);color:var(--warning) }
+
+  /* Earn list */
+  .earn-item{ display:flex;align-items:center;gap:14px;padding:14px 16px }
+  .earn-item+.earn-item{ border-top:1px solid var(--line-faint) }
+  .earn-item .ico{ width:44px;height:44px;flex:none;border-radius:var(--r-md);display:grid;place-items:center;
+    font-size:22px;background:var(--cream-warm) }
+  .earn-item .body{ flex:1 } .earn-item .body .t{ font-weight:700;font-size:14.5px }
+  .earn-item .body .d{ font-size:12.5px;color:var(--ink-400);margin-top:2px }
+  .pill-amt{ font-weight:800;color:var(--success);font-size:15px }
+
+  /* Shop */
+  .action-tiles{ display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0 }
+  .action-tile{ background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow-card);
+    padding:16px;text-align:center;cursor:pointer;border:1px solid transparent;transition:all var(--dur) var(--ease) }
+  .action-tile:hover{ box-shadow:var(--shadow-md);transform:translateY(-2px);border-color:var(--line-soft) }
+  .action-tile .glyph{ width:40px;height:40px;margin:0 auto 8px;border-radius:12px;display:grid;place-items:center;
+    background:var(--brand-2);color:#fff }
+  .action-tile .glyph svg{ width:20px;height:20px }
+  .action-tile .at-t{ font-weight:700;font-size:14px } .action-tile .at-d{ font-size:11.5px;color:var(--ink-400);margin-top:2px }
+
+  .cashback-strip{ display:flex;justify-content:space-between;align-items:center;min-height:116px;
+    background:var(--brand-2);color:#fff;border-radius:var(--r-lg);padding:16px;margin:12px 0 }
+  .cashback-strip .lab{ font-size:12px;opacity:.85 } .cashback-strip .num{ font-size:26px;font-weight:800;margin-top:4px }
+
+  .filter-bar{ display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0 }
+  .fsel{ font:inherit;font-size:13px;font-weight:700;color:var(--ink-900);background:var(--paper);
+    border:1px solid var(--line-soft);border-radius:var(--r-md);padding:9px 12px;cursor:pointer;max-width:49% }
+  .fsel:focus{ outline:none;border-color:var(--brand) }
+  .offer-grid{ display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0 }
+  .offer{ background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow-card);padding:16px;
+    display:flex;flex-direction:column;position:relative }
+  .offer .ic{ width:100%;aspect-ratio:4/5;border-radius:var(--r-md);background:#fff;border:1px solid var(--line-faint);
+    display:grid;place-items:center;font-size:54px;margin-bottom:8px;overflow:hidden }
+  .offer .ic img{ width:100%;height:100%;object-fit:contain;padding:12px }
+  .offer .brand-n{ font-size:11px;font-weight:700;color:var(--ink-400);text-transform:uppercase;letter-spacing:.04em }
+  .offer .prod{ font-size:13px;font-weight:700;line-height:1.25;margin:2px 0 8px;flex:1 }
+  .offer .cb{ font-weight:800;color:var(--success);font-size:15px }
+  .offer .exp{ font-size:11px;color:var(--ink-400);margin-top:4px }
+  .offer.exhausted{ opacity:.62 }
+  .offer .ribbon{ position:absolute;top:10px;right:10px;background:var(--danger-bg);color:var(--danger);
+    font-size:10px;font-weight:700;padding:3px 7px;border-radius:6px }
+  .offer .clip{ margin-top:8px;border:0;border-radius:var(--r-pill);padding:8px;font-weight:800;font-size:12px;
+    cursor:pointer;background:var(--cream-warm);color:var(--action) }
+  .offer .clip:hover{ background:#e7e0cf }
+  .offer .clip.on{ background:var(--action);color:#fff }
+  /* Featured reward banner (horizontal offer) */
+  .feat-banner{ display:flex;align-items:center;gap:14px;cursor:pointer;min-height:116px;
+    background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff;
+    border-radius:var(--r-lg);padding:16px;margin:12px 0;box-shadow:var(--shadow-md) }
+  .feat-banner:hover{ filter:brightness(1.05) }
+  .feat-banner .fb-ic{ width:76px;height:76px;flex:none;border-radius:14px;background:#fff;
+    display:grid;place-items:center;font-size:40px;overflow:hidden }
+  .feat-banner .fb-ic img{ width:100%;height:100%;object-fit:contain;padding:9px }
+  .feat-banner .fb-body{ flex:1;min-width:0 }
+  .feat-banner .fb-tag{ font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;opacity:.9 }
+  .feat-banner .fb-name{ font-size:16px;font-weight:800;line-height:1.2;margin-top:3px;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden }
+  .feat-banner .fb-tagline{ font-size:12px;opacity:.88;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis }
+  .feat-banner .fb-cb{ flex:none;background:#fff;color:var(--success);font-weight:800;font-size:14px;text-align:center;
+    border-radius:var(--r-pill);padding:8px 12px;line-height:1.1 }
+  .feat-banner .fb-cb span{ display:block;font-size:9.5px;font-weight:700;color:var(--ink-400);text-transform:uppercase;margin-top:1px }
+  .clipped-strip{ background:var(--info-bg);border-radius:var(--r-lg);padding:12px 14px;margin:6px 0 4px;font-size:13px }
+  .clipped-strip .cs-n{ font-weight:800;color:var(--action) }
+  .clip-chip{ display:inline-flex;align-items:center;gap:5px;background:#fff;border:1px solid var(--line-soft);
+    border-radius:var(--r-pill);padding:4px 9px;font-size:12px;font-weight:600;margin:6px 4px 0 0 }
+  .clip-chip button{ border:0;background:transparent;color:var(--ink-400);cursor:pointer;font-size:13px;line-height:1 }
+  .badge-count{ background:var(--action);color:#fff;border-radius:var(--r-pill);font-size:11px;font-weight:800;padding:2px 9px;margin-left:6px;vertical-align:middle }
+
+  .store{ display:flex;align-items:center;gap:12px;padding:13px 16px }
+  .store+.store{ border-top:1px solid var(--line-faint) }
+  .store .logo{ width:40px;height:40px;flex:none;border-radius:10px;display:grid;place-items:center;font-weight:800;color:#fff }
+  .store .b{ flex:1 } .store .b .n{ font-weight:700;font-size:14px } .store .b .m{ font-size:12px;color:var(--ink-400) }
+
+  /* Submission history */
+  .sub{ display:flex;align-items:center;gap:12px;padding:13px 16px }
+  .sub+.sub{ border-top:1px solid var(--line-faint) }
+  .sub .si{ width:40px;height:40px;flex:none;border-radius:10px;display:grid;place-items:center;font-size:18px;background:var(--cream-warm) }
+  .sub .sb{ flex:1 } .sub .sb .sn{ font-weight:700;font-size:14px } .sub .sb .sd{ font-size:12px;color:var(--ink-400);margin-top:2px }
+  .status{ font-size:11px;font-weight:700;padding:4px 9px;border-radius:var(--r-pill);white-space:nowrap }
+  .status.credited{ background:var(--success-bg);color:var(--success) }
+  .status.pending{ background:var(--warning-bg);color:var(--warning) }
+  .status.declined{ background:var(--line-faint);color:var(--ink-500) }
+  .status.clawed{ background:var(--danger-bg);color:var(--danger) }
+
+  /* Sheet / modal */
+  /* Floating cart + receipt FAB (Ibotta-style) */
+  main{ padding-bottom:96px }
+  .fab-wrap{ position:absolute;left:0;right:0;bottom:20px;z-index:30;display:none;flex-direction:row;align-items:center;justify-content:center;gap:12px }
+  .fab-cart{ display:flex;align-items:center;gap:8px;border:0;cursor:pointer;background:#fff;color:var(--brand-2);
+    border-radius:var(--r-pill);padding:14px 18px;font-weight:800;font-size:15px;box-shadow:var(--shadow-pop);font-family:inherit }
+  .fab-cart:hover{ filter:brightness(.98) }
+  .fab-cart .cart-count{ background:var(--action);color:#fff;border-radius:var(--r-pill);min-width:22px;height:22px;
+    display:grid;place-items:center;font-size:13px;font-weight:800;padding:0 6px }
+  .fab-receipt{ display:flex;align-items:center;gap:8px;border:0;cursor:pointer;background:var(--brand-2);color:#fff;
+    border-radius:var(--r-pill);padding:14px 18px;font-weight:800;font-size:15px;box-shadow:var(--shadow-pop);font-family:inherit }
+  .fab-receipt:hover{ filter:brightness(1.1) }
+  .cart-row{ display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line-faint) }
+  .cart-row .ci{ width:42px;height:42px;border-radius:12px;background:var(--cream-warm);display:grid;place-items:center;font-size:22px;flex:none }
+  .cart-row .cn{ font-weight:700;font-size:14px;line-height:1.25 }
+  .cart-row .cm{ font-size:12px;color:var(--ink-400) }
+  .cart-row .cc{ margin-left:auto;font-weight:800;color:var(--success);font-size:14px;white-space:nowrap }
+  .cart-row .cx{ border:0;background:transparent;color:var(--ink-400);cursor:pointer;font-size:16px;padding:4px }
+  .cart-total{ display:flex;justify-content:space-between;align-items:center;margin:16px 2px 2px;font-weight:800;font-size:15px }
+  .cart-total .amt{ color:var(--success) }
+  .cart-empty{ text-align:center;color:var(--ink-500);padding:22px 8px 14px }
+
+  /* Centered disclosure modal */
+  .modal-scrim{ position:fixed;inset:0;background:rgba(2,8,23,.55);z-index:50;display:none;
+    align-items:center;justify-content:center;padding:20px }
+  .modal-scrim.open{ display:flex }
+  .modal{ width:100%;max-width:400px;background:var(--paper);border-radius:24px;padding:24px 22px 22px;
+    box-shadow:var(--shadow-pop);animation:popIn .3s var(--ease);text-align:center;max-height:90vh;overflow-y:auto }
+  @keyframes popIn{ from{transform:scale(.94);opacity:0} to{transform:none;opacity:1} }
+  .modal .m-ic{ width:60px;height:60px;border-radius:var(--r-pill);background:var(--info-bg);display:grid;place-items:center;font-size:30px;margin:0 auto 14px }
+  .modal .brandline{ display:inline-flex;align-items:center;gap:6px;font-weight:800;color:var(--brand-2);font-size:13px;margin-bottom:6px }
+  .modal h2{ font-size:20px;font-weight:800;margin:0 0 12px;color:var(--ink-900) }
+  .modal p{ font-size:14px;color:var(--ink-500);line-height:1.5;margin:0 0 12px;text-align:left }
+  .modal p b{ color:var(--ink-900) }
+  .modal .m-note{ background:var(--cream-warm);border-radius:12px;padding:12px 14px;font-size:12.5px;
+    color:var(--ink-700);line-height:1.45;text-align:left;margin:2px 0 18px }
+
+  .scrim{ position:fixed;inset:0;background:rgba(2,8,23,.45);z-index:40;display:none;
+    align-items:flex-end;justify-content:center }
+  .scrim.open{ display:flex }
+  .sheet{ width:100%;max-width:440px;background:var(--paper);border-radius:24px 24px 0 0;
+    max-height:92vh;overflow-y:auto;animation:slideUp .32s var(--ease);padding:8px 18px 28px }
+  @media(min-width:480px){ .sheet{ border-radius:24px;margin-bottom:24px } }
+  @keyframes slideUp{ from{transform:translateY(100%)} to{transform:none} }
+  .sheet .grip{ width:40px;height:4px;border-radius:2px;background:var(--line-soft);margin:8px auto 12px }
+  .sheet h2{ font-size:20px;font-weight:800;margin:4px 2px 4px }
+  .sheet .sub-h{ color:var(--ink-500);font-size:13.5px;margin:0 2px 16px }
+  .sheet-close{ position:absolute }
+
+  .drop{ border:2px dashed var(--line);border-radius:var(--r-lg);padding:30px 16px;text-align:center;
+    color:var(--ink-500);cursor:pointer;transition:.15s }
+  .drop:hover,.drop.drag{ border-color:var(--brand);color:var(--brand-2);background:#f2fbfd }
+  .drop .big{ font-size:34px }
+  .preview{ margin-top:14px;text-align:center }
+  .preview img{ max-width:100%;max-height:260px;border-radius:var(--r-md);border:1px solid var(--line-soft) }
+
+  .banner{ border-radius:var(--r-md);padding:12px 14px;font-size:13.5px;margin:12px 0 }
+  .banner.ok{ background:var(--success-bg);color:var(--success) }
+  .banner.warn{ background:var(--warning-bg);color:var(--warning) }
+  .banner.err{ background:var(--danger-bg);color:var(--danger) }
+  .banner.info{ background:var(--info-bg);color:var(--brand-2) }
+
+  .result-hero{ text-align:center;padding:14px 6px 6px }
+  .result-hero .rj{ font-size:52px;line-height:1 }
+  .result-hero .rt{ font-size:22px;font-weight:800;margin-top:8px }
+  .result-hero .rd{ color:var(--ink-500);font-size:14px;margin-top:4px }
+  .matched-item{ display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line-faint);font-size:14px }
+  .matched-item .mc{ font-weight:800;color:var(--success) }
+
+  .kv{ display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin:10px 0 }
+  .kv dt{ color:var(--ink-400);font-size:12px } .kv dd{ margin:0 0 8px;font-weight:700;font-size:14px }
+  details{ margin-top:12px } summary{ cursor:pointer;color:var(--link);font-size:13px;font-weight:600 }
+  pre{ background:#0f1623;color:#d7e0ef;padding:12px;border-radius:var(--r-md);overflow:auto;font-size:11.5px;max-height:280px }
+
+  .spinner{ display:inline-block;width:15px;height:15px;border:2px solid #fff;border-top-color:transparent;
+    border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:7px }
+  .spinner.dark{ border-color:var(--brand-2);border-top-color:transparent }
+  @keyframes spin{ to{transform:rotate(360deg)} }
+  .center-load{ text-align:center;color:var(--ink-500);padding:30px 0;font-size:14px }
+  .hidden{ display:none !important }
+  input.upc{ padding:11px 12px;border:1px solid var(--line-soft);border-radius:var(--r-md);
+    width:100%;font-family:inherit;font-size:15px }
+  .toast{ position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(120px);
+    background:var(--ink-900);color:#fff;padding:12px 18px;border-radius:var(--r-pill);font-size:14px;font-weight:600;
+    z-index:60;box-shadow:var(--shadow-pop);transition:transform .35s var(--ease);max-width:90% }
+  .toast.show{ transform:translateX(-50%) translateY(0) }
+  .footer-legal{ font-size:11px;color:var(--ink-400);text-align:center;padding:24px 8px 8px;line-height:1.5 }
+
+  /* drill-in detail */
+  .offer.clickable{ cursor:pointer;transition:all var(--dur) var(--ease) }
+  .offer.clickable:hover{ box-shadow:var(--shadow-md);transform:translateY(-2px) }
+  .store{ cursor:pointer }
+  .detail-hero{ display:flex;gap:14px;align-items:center;margin:4px 2px 16px }
+  .detail-hero .dh-ic{ width:64px;height:64px;flex:none;border-radius:var(--r-lg);display:grid;place-items:center;font-size:34px;background:var(--cream-warm) }
+  .detail-hero .dh-brand{ font-size:12px;font-weight:700;color:var(--ink-400);text-transform:uppercase;letter-spacing:.04em }
+  .detail-hero .dh-name{ font-size:19px;font-weight:800;line-height:1.2;margin:2px 0 4px }
+  .detail-hero .dh-cb{ font-weight:800;color:var(--success);font-size:15px }
+  .size-row{ display:flex;align-items:center;justify-content:space-between;padding:13px 14px;border:1px solid var(--line-faint);
+    border-radius:var(--r-md);margin-bottom:8px }
+  .size-row .sz-l{ font-weight:700;font-size:14px } .size-row .sz-u{ font-size:11px;color:var(--ink-400);margin-top:2px;font-variant-numeric:tabular-nums }
+  .size-row .sz-c{ font-weight:800;color:var(--success);font-size:15px }
+  .mini-store{ display:inline-flex;align-items:center;gap:7px;background:var(--cream);border:1px solid var(--line-faint);
+    border-radius:var(--r-pill);padding:6px 12px;font-size:13px;font-weight:600;margin:0 8px 8px 0;cursor:pointer }
+  .mini-store .ms-dot{ width:18px;height:18px;border-radius:5px;display:grid;place-items:center;color:#fff;font-size:9px;font-weight:800 }
+  .detail-label{ font-size:13px;font-weight:700;color:var(--ink-500);text-transform:uppercase;letter-spacing:.04em;margin:18px 2px 10px }
+  .store-banner{ display:flex;align-items:center;gap:14px;margin:4px 2px 8px }
+  .store-banner .sb-logo{ width:56px;height:56px;flex:none;border-radius:var(--r-lg);display:grid;place-items:center;color:#fff;font-weight:800;font-size:18px }
+  .store-banner .sb-name{ font-size:19px;font-weight:800 } .store-banner .sb-meta{ font-size:13px;color:var(--ink-400);margin-top:2px }
+.previewbg{font-family:Manrope,system-ui,sans-serif;background:radial-gradient(120% 80% at 50% 0%,#e9eef1 0%,#dfe4e7 60%,#d3d8db 100%);display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:0;}
+/* Responsive: full-bleed on phones, centered card on tablet/desktop.
+   Pin the device to exactly the (dynamic) viewport height — height AND
+   min/max-height — so the base rule's min-height:100vh can't force it taller
+   than the visible screen on mobile (which would push the floating FAB below
+   the bottom browser bar). dvh handles mobile browser chrome. */
+.previewbg .device{width:100%;max-width:480px;margin:0;border-radius:0;
+  height:100vh;min-height:100vh;max-height:100vh;
+  height:100dvh;min-height:100dvh;max-height:100dvh}
+@media(min-width:600px){
+  .previewbg{padding:24px 12px}
+  .previewbg .device{border-radius:24px;
+    height:calc(100vh - 48px);min-height:calc(100vh - 48px);max-height:calc(100vh - 48px);
+    height:calc(100dvh - 48px);min-height:calc(100dvh - 48px);max-height:calc(100dvh - 48px)}
+}
+/* Standalone "Cash Back site" mode (reached via the disclosure-gated link-out):
+   hide the app tabs + other panels and rebrand the bar, so the full cashback
+   module renders as its own separate page. */
+body.cashback-only .seg-tabs{display:none}
+body.cashback-only #tab-overview,body.cashback-only #tab-earn{display:none!important}
+body.cashback-only .appbar{background:var(--brand-2)}
+body.cashback-only .appbar .brand{color:#fff}
+body.cashback-only .appbar .iconbtn{color:#fff}
+</style>
+
+<script>
+  // ===== Backend configuration =====================================
+  // Leave empty to use same-origin (localhost Flask) or the offline mock.
+  // Set to your deployed Flask base URL (e.g. "https://cpg-demo.onrender.com")
+  // to run the REAL AWS Textract pipeline from the GitHub Pages frontend.
+  window.BACKEND_URL = "https://cpg-demo-backend.onrender.com";
+</script>
+<script>
+(function(){
+  // If a remote backend is configured, never mock — let real fetches through.
+  if(window.BACKEND_URL) return;
+  // Otherwise this mock stands in only when there's no Flask backend to talk to:
+  //   - opened directly from disk (file://)
+  //   - served statically from GitHub Pages (*.github.io) or Cloudflare Pages
+  // When served from http://localhost:5050/noclip (or any other host running
+  // the Flask app, e.g. a LAN IP for phone testing), the real backend
+  // (Veryfi + AWS Textract) is used instead.
+  var staticHost = location.protocol==='file:'
+    || /\.github\.io$/.test(location.hostname)
+    || /\.pages\.dev$/.test(location.hostname);
+  if(!staticHost) return;
+  const OFFERS = [{"upc": "300450449108", "product": "Centrum Silver Adult 50+ Multivitamin", "brand": "Centrum", "category": "otc", "cashback": 3.0, "campaign_id": "CMP-1002", "icon": "\ud83d\udc8a", "expires": "2026-07-31", "status": "active", "tagline": "Daily multivitamin for adults 50+", "sizes": [{"size": "65 ct", "upc": "300450449016", "cashback": 2.0}, {"size": "100 ct", "upc": "300450449108", "cashback": 3.0}, {"size": "200 ct", "upc": "300450449207", "cashback": 4.0}]}, {"upc": "070074512525", "product": "Ensure Original Nutrition Shake", "brand": "Ensure", "category": "otc", "cashback": 4.0, "campaign_id": "CMP-1004", "icon": "\ud83e\udd64", "expires": "2026-07-15", "status": "active", "tagline": "Complete, balanced nutrition", "sizes": [{"size": "6 ct", "upc": "070074512525", "cashback": 4.0}, {"size": "16 ct", "upc": "070074512563", "cashback": 9.0}]}, {"upc": "300450231024", "product": "Tylenol Extra Strength", "brand": "Tylenol", "category": "otc", "cashback": 2.0, "campaign_id": "CMP-1005", "icon": "\ud83d\udc8a", "expires": "2026-08-30", "status": "active", "tagline": "Pain reliever & fever reducer", "sizes": [{"size": "50 ct", "upc": "300450231017", "cashback": 1.5}, {"size": "100 ct", "upc": "300450231024", "cashback": 2.0}, {"size": "225 ct", "upc": "300450231222", "cashback": 3.5}]}, {"upc": "036000291452", "product": "Nature Valley Crunchy Granola Bars", "brand": "Nature Valley", "category": "grocery", "cashback": 1.5, "campaign_id": "CMP-1001", "icon": "\ud83e\udd5c", "expires": "2026-07-31", "status": "active", "tagline": "Whole-grain oats & honey", "sizes": [{"size": "6 bars", "upc": "036000291452", "cashback": 1.5}, {"size": "12 bars", "upc": "036000291469", "cashback": 2.5}]}, {"upc": "041220576456", "product": "Campbell's Healthy Request Low-Sodium Soup", "brand": "Campbell's", "category": "food-and-produce", "cashback": 0.75, "campaign_id": "CMP-1003", "icon": "\ud83e\udd6b", "expires": "2026-09-15", "status": "active", "tagline": "Heart-healthy, low sodium", "sizes": [{"size": "10.5 oz can", "upc": "041220576456", "cashback": 0.75}]}, {"upc": "030000010204", "product": "Quaker Old Fashioned Oats", "brand": "Quaker", "category": "food-and-produce", "cashback": 1.25, "campaign_id": "CMP-1006", "icon": "\ud83c\udf3e", "expires": "2026-08-01", "status": "active", "tagline": "100% whole grain", "sizes": [{"size": "18 oz", "upc": "030000010198", "cashback": 0.75}, {"size": "42 oz", "upc": "030000010204", "cashback": 1.25}]}, {"upc": "070074679006", "product": "Glucerna Nutrition Shake", "brand": "Glucerna", "category": "otc", "cashback": 3.5, "campaign_id": "CMP-1007", "icon": "\ud83e\udd5b", "expires": "2026-06-30", "status": "exhausted", "tagline": "Designed for people with diabetes", "sizes": [{"size": "6 ct", "upc": "070074679006", "cashback": 3.5}]}, {"upc": "2113007100", "product": "Milk", "brand": "", "category": "food-and-produce", "cashback": 1.0, "campaign_id": "CMP-1008", "icon": "🥛", "expires": "2026-12-31", "status": "active", "tagline": "Vitamin D or 2% — $1 back", "sizes": [{"size": "Vitamin D", "upc": "2113007100", "cashback": 1.0}, {"size": "2%", "upc": "2113007101", "cashback": 1.0}]}];
+  function variants(c){c=String(c||'').replace(/\D/g,'');const v=new Set([c]);if(c.length===13&&c[0]==='0')v.add(c.slice(1));if(c.length===12)v.add('0'+c);return v;}
+  function resp(o){return Promise.resolve({ok:true,status:200,text:()=>Promise.resolve(JSON.stringify(o)),json:()=>Promise.resolve(o)});}
+  const real=window.fetch;
+  window.fetch=function(url,opts){
+    url=String(url);
+    if(url.indexOf('/api/offers')>-1) return resp(OFFERS);
+    if(url.indexOf('/api/config-status')>-1) return resp({configured:true});
+    if(url.indexOf('/api/check-offer')>-1){
+      const upc=((url.split('upc=')[1]||'')).replace(/\D/g,''); const w=variants(upc);
+      for(const o of OFFERS){ const codes=[{upc:o.upc,cashback:o.cashback,size:null}].concat(o.sizes||[]);
+        for(const c of codes){ for(const x of variants(c.upc)){ if(w.has(x)){ const r=Object.assign({eligible:true,scanned_upc:upc},o); if(c.size){r.matched_size=c.size;r.cashback=c.cashback;} return resp(r);} } } }
+      return resp({eligible:false,scanned_upc:upc});
+    }
+    if(url.indexOf('/api/process')>-1){
+      return resp({vendor:{name:'CVS Pharmacy'},date:'2026-06-15',total:24.97,currency_code:'USD',category:'Pharmacy',document_type:'receipt',
+        line_items:[{description:'CENTRUM SILVER 50+ 200CT',quantity:1,total:18.99,upc:'300450449207'},
+                    {description:'NATURE VALLEY GRANOLA 6CT',quantity:1,total:4.49,upc:'036000291452'},
+                    {description:'PAPER TOWELS 2PK',quantity:1,total:7.49}]});
+    }
+    // ---- AWS Textract camera path (canned data for offline preview) ----
+    if(url.indexOf('/aws/status')>-1) return resp({configured:false,region:'preview',detail:'file:// preview — using canned Textract data. Run the Flask server for live OCR.'});
+    if(url.indexOf('/aws/get-upload-url')>-1) return resp({job_id:'mock',key:'receipts/mock.jpg',upload_url:'/aws/upload/mock'});
+    if(url.indexOf('/aws/upload/')>-1) return resp({status:'processing',job_id:'mock'});
+    if(url.indexOf('/aws/analyze-status')>-1) return resp({status:'done',result:{
+        vendor:{name:'CVS Pharmacy'},date:'2026-06-15',total:24.97,currency_code:'USD',document_type:'receipt',source:'aws-textract',avg_confidence:97.4,
+        line_items:[{description:'CENTRUM SILVER 50+ 200CT',quantity:'1',total:18.99,upc:'300450449207'},
+                    {description:'NATURE VALLEY GRANOLA 6CT',quantity:'1',total:4.49,upc:'036000291452'},
+                    {description:'PAPER TOWELS 2PK',quantity:'1',total:7.49}]}});
+    return real(url,opts);
+  };
+})();
+</script>
+<div class="previewbg">
+<div class="device">
+  <!-- App bar -->
+  <div class="appbar">
+    <button class="iconbtn" title="Menu" aria-label="Menu">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <div class="brand"><span class="spark">✦</span> ABC Health</div>
+    <button class="iconbtn" title="Help" aria-label="Help">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1 .9-1 1.7"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></svg>
+    </button>
+  </div>
+
+  <!-- Tabs -->
+  <div class="seg-tabs">
+    <button class="seg-tab active" data-tab="overview">Overview</button>
+    <button class="seg-tab" data-tab="earn">Earn</button>
+    <button class="seg-tab" data-tab="shop">Shop</button>
+  </div>
+
+  <main>
+    <!-- ================= OVERVIEW ================= -->
+    <section class="tab-panel active" id="tab-overview">
+      <div class="balance-row">
+        <div class="visa">
+          <div class="v-top">✦ ABC Health</div>
+          <div class="v-chip"></div>
+          <div class="v-visa">VISA</div>
+        </div>
+        <div>
+          <div class="bal-label">Spending balance</div>
+          <div class="bal-amt"><sup>$</sup><span id="balance">85.00</span></div>
+        </div>
+      </div>
+
+      <div class="section-label">Available
+        <span class="muted" style="font-size:20px;letter-spacing:2px">···</span>
+      </div>
+      <div class="card">
+        <div class="reward-row" data-goto="shop">
+          <div><div class="title">2026 Rewards</div><div class="sub">$200/yr max rewards</div></div>
+          <div style="display:flex;align-items:center"><span class="amt"><sup>$</sup>10.00</span><span class="chev">›</span></div>
+        </div>
+        <div class="reward-row" data-goto="shop">
+          <div><div class="title">Over-the-counter</div><div class="sub">$75/yr max rewards</div></div>
+          <div style="display:flex;align-items:center"><span class="amt"><sup>$</sup>75.00</span><span class="chev">›</span></div>
+        </div>
+      </div>
+
+      <div style="height:14px"></div>
+      <div class="progress-card">
+        <div class="top">You've earned <strong>$10</strong></div>
+        <div class="bar"><i style="width:5%"></i></div>
+        <div class="bar-ends"><span>$0</span><span>$200</span></div>
+      </div>
+
+      <div style="height:16px"></div>
+      <div class="promo">
+        <h3>Your $10 family wellness credit is ticking</h3>
+        <p>Grab the kids' gummy vitamins (or something for you) before Apr 30 — then see what else your points unlock.</p>
+        <button class="btn btn-light" data-goto="shop">Claim now ›</button>
+        <span class="emoji">🧸</span>
+      </div>
+
+      <div class="section-label">Cash back</div>
+      <a class="card pad" id="cashbackSiteCard" href="design_preview_noclip.html?view=cashback" style="display:flex;gap:14px;align-items:center;text-decoration:none;color:inherit;border:1px solid var(--line-soft)">
+        <div style="width:46px;height:46px;flex:none;border-radius:12px;display:grid;place-items:center;font-size:24px;background:var(--brand-2);color:#fff">🧾</div>
+        <div style="flex:1">
+          <div style="font-weight:800;display:flex;align-items:center;gap:8px;flex-wrap:wrap">Cash Back
+            <span style="font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--action)">Separate site ↗</span></div>
+          <div class="small muted" style="margin-top:3px">Browse offers and submit receipts on our dedicated Cash Back page — opens outside the app.</div>
+        </div>
+        <span class="chev" style="color:var(--ink-400)">›</span>
+      </a>
+
+      <div class="section-label">Your featured rewards</div>
+      <div class="hscroll">
+        <div class="feat"><div class="tile"><sup>$</sup>10</div><div><div class="ttl">Claim Your $10 Family Wellness Credit</div><span class="tag">Offer</span><span class="tag warn">Expires Apr 30</span></div></div>
+        <div class="feat"><div class="tile" style="background:#7C5CBF"><sup>$</sup>15</div><div><div class="ttl">14-day mood check-in challenge</div><span class="tag gray">Behavioral Health</span></div></div>
+        <div class="feat"><div class="tile" style="background:var(--success)"><sup>$</sup>10</div><div><div class="ttl">Are You on Track for Retirement?</div><span class="tag gray">Financial Wellness</span></div></div>
+        <div class="feat"><div class="tile" style="background:#7C5CBF"><sup>$</sup>15</div><div><div class="ttl">14-day "I" affirmation challenge</div><span class="tag gray">Behavioral Health</span></div></div>
+      </div>
+    </section>
+
+    <!-- ================= EARN ================= -->
+    <section class="tab-panel" id="tab-earn">
+      <h1 class="page">Ways to earn</h1>
+      <div class="cashback-strip">
+        <div><div class="lab">Earned this year</div><div class="num">$10.00</div></div>
+        <button class="btn btn-light" data-goto="shop">Earn cashback ›</button>
+      </div>
+      <div class="section-label">Healthy actions</div>
+      <div class="card">
+        <div class="earn-item"><div class="ico">💧</div><div class="body"><div class="t">Drink water daily</div><div class="d">Log 8 glasses · daily streak</div></div><span class="pill-amt">+$1</span></div>
+        <div class="earn-item"><div class="ico">🧠</div><div class="body"><div class="t">14-day mood check-in</div><div class="d">Behavioral Health · this month</div></div><span class="pill-amt">+$15</span></div>
+        <div class="earn-item"><div class="ico">💪</div><div class="body"><div class="t">Daily affirmation challenge</div><div class="d">Behavioral Health · this month</div></div><span class="pill-amt">+$15</span></div>
+        <div class="earn-item"><div class="ico">🩺</div><div class="body"><div class="t">Complete annual wellness visit</div><div class="d">Preventive care</div></div><span class="pill-amt">+$25</span></div>
+      </div>
+      <div class="section-label">Buy &amp; earn</div>
+      <div class="card pad">
+        <div style="display:flex;gap:14px;align-items:center">
+          <div style="font-size:34px">🧾</div>
+          <div style="flex:1">
+            <div style="font-weight:700">Cash back on everyday buys</div>
+            <div class="small muted" style="margin-top:3px">Scan receipts for OTC, vitamins &amp; healthy food and we'll credit your card.</div>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-block" style="margin-top:14px" data-goto="shop">Go to Shop</button>
+      </div>
+    </section>
+
+    <!-- ================= SHOP (CPG cashback) ================= -->
+    <section class="tab-panel" id="tab-shop">
+      <h1 class="page">Cash back on everyday buys</h1>
+      <p class="muted" style="margin:0 2px 12px;font-size:13px;line-height:1.4">Buy eligible OTC, vitamins &amp; healthy food, then scan your receipt or a product barcode to earn cash back on your card.</p>
+
+      <div class="cashback-strip">
+        <div><div class="lab">Cashback earned</div><div class="num" id="cbEarned">$0.00</div></div>
+        <div style="text-align:right"><div class="lab">Pending review</div><div class="num" id="cbPending">$0.00</div></div>
+      </div>
+
+      <div class="action-tiles">
+        <div class="action-tile" id="openReceipt">
+          <div class="glyph"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a2 2 0 0 1 2 2v15l-3-2-3 2-3-2-3 2-3-2V6a2 2 0 0 1 2-2z" transform="translate(1 0)"/><path d="M8 8h7M8 12h7"/></svg></div>
+          <div class="at-t">Snap a receipt</div>
+          <div class="at-d">Upload or photograph</div>
+        </div>
+        <div class="action-tile" id="openBarcode">
+          <div class="glyph"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5v14M7 5v14M11 5v14M15 5v14M19 5v14M21 5v14"/></svg></div>
+          <div class="at-t">Scan a product</div>
+          <div class="at-d">Check a barcode</div>
+        </div>
+      </div>
+
+      <div class="section-label">Cash back offers</div>
+      <div id="featuredBanner"></div>
+      <div class="filter-bar">
+        <select id="sortSel" class="fsel" aria-label="Sort offers">
+          <option value="savings-desc">Most savings</option>
+          <option value="savings-asc">Least savings</option>
+          <option value="az">Name: A–Z</option>
+          <option value="za">Name: Z–A</option>
+        </select>
+        <select id="catSel" class="fsel" aria-label="Filter by category"></select>
+      </div>
+      <div class="offer-grid" id="offerGrid">
+        <div class="center-load" style="grid-column:1/-1"><span class="spinner dark"></span>Loading offers…</div>
+      </div>
+
+      <div class="section-label">Shop near you <a class="small" style="color:var(--link);text-decoration:none;font-weight:600" href="#">20814 ›</a></div>
+      <div class="card" id="storeList"></div>
+
+      <div class="section-label">Recent submissions</div>
+      <div class="card" id="subList"></div>
+
+      <div class="footer-legal">
+        The ABC Health rewards Visa® prepaid card is issued by The Bancorp Bank, N.A., pursuant to a license from Visa U.S.A. Inc.<br>
+        Reward earnings are taxable. Members are responsible for reporting reward amounts on their tax return.
+      </div>
+    </section>
+  </main>
+
+  <!-- Floating receipt scan (no-clip flow) -->
+  <div class="fab-wrap" id="fabWrap">
+    <button class="fab-receipt" id="fabReceipt">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h11a1 1 0 0 1 1 1v17l-2.5-1.6L13 21l-2.5-1.6L8 21l-2.5-1.6L4 21V4a1 1 0 0 1 1-1z"/><path d="M8 8h6M8 12h6"/></svg>
+      Scan receipt to earn
+    </button>
+  </div>
+</div>
+
+<!-- ============ SHOP DISCLOSURE MODAL ============ -->
+<div class="modal-scrim" id="disclosureScrim">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="discTitle">
+    <div class="m-ic">🛍️</div>
+    <div class="brandline"><span class="spark">✦</span> Powered by Sunny Benefits</div>
+    <h2 id="discTitle">About these cash back offers</h2>
+    <p>These cash back offers are provided by <b>Sunny Benefits</b> and are funded by participating consumer-brand partners.</p>
+    <p><b>They are not a benefit of your health plan.</b> Your plan does not sponsor, endorse, fund, or administer these rewards and is not responsible for them in any way.</p>
+    <div class="m-note">Cash back is paid to your Sunny Rewards card, separate from any plan benefit. Reward earnings may be taxable and are your responsibility to report. Offers are subject to availability and may change or end at any time.</div>
+    <button class="btn btn-primary btn-block" id="disclosureOk">Got it — show me the offers</button>
+  </div>
+</div>
+
+<!-- ============ RECEIPT SHEET ============ -->
+<div class="scrim" id="receiptScrim">
+  <div class="sheet" id="receiptSheet">
+    <div class="grip"></div>
+    <h2>Snap your receipt</h2>
+    <p class="sub-h">We'll read it and automatically credit any eligible cash back offers it contains — no clipping needed.</p>
+
+    <div id="rcStep1">
+      <div id="configWarn" class="banner warn hidden">Veryfi credentials aren't set yet. Add them to <code>.env</code> and restart the server to use live OCR.</div>
+      <div class="drop" id="drop">
+        <div class="big">📤</div>
+        <strong>Upload a receipt</strong><br>
+        <span class="small">Choose an image · JPG, PNG or HEIC · up to 20 MB</span>
+      </div>
+      <input id="file" type="file" accept="image/*" class="hidden" />
+      <div class="preview" id="preview"></div>
+      <button id="submitReceipt" class="btn btn-primary btn-block" style="margin-top:16px" disabled>Submit receipt</button>
+
+      <div id="camOrDivider" style="display:flex;align-items:center;gap:10px;margin:16px 2px 12px;color:var(--ink-400);font-size:12px">
+        <span style="flex:1;height:1px;background:var(--line-soft)"></span>OR<span style="flex:1;height:1px;background:var(--line-soft)"></span>
+      </div>
+      <div id="awsWarn" class="banner warn hidden"></div>
+      <button id="useCamera" class="btn btn-brand btn-block">📸 Capture receipt with camera</button>
+      <button id="closeReceipt" class="btn btn-ghost btn-block" style="margin-top:10px">Cancel</button>
+    </div>
+
+    <div id="rcResult" class="hidden"></div>
+  </div>
+</div>
+
+<!-- ============ BARCODE SHEET ============ -->
+<div class="scrim" id="barcodeScrim">
+  <div class="sheet" id="barcodeSheet">
+    <div class="grip"></div>
+    <h2 id="barcodeTitle">Scan a product</h2>
+    <p class="sub-h" id="barcodeSub">Check a barcode against active offers. Decoding happens in your browser — only the UPC number is sent, never an image.</p>
+    <div id="reader" style="border-radius:var(--r-md);overflow:hidden"></div>
+    <div style="display:flex;gap:10px;margin-top:12px">
+      <button id="scanStart" class="btn btn-primary" style="flex:1;justify-content:center">Start camera</button>
+      <button id="scanStop" class="btn btn-ghost hidden" style="flex:1;justify-content:center">Stop camera</button>
+    </div>
+    <p class="small muted" style="margin:16px 2px 6px">No camera? Enter a UPC:</p>
+    <div style="display:flex;gap:8px">
+      <input id="manualUpc" class="upc" inputmode="numeric" placeholder="300450449108" />
+      <button id="manualCheck" class="btn btn-brand">Check</button>
+    </div>
+    <p class="small muted" style="margin-top:8px">Try <b>300450449108</b> (Centrum) or <b>036000291452</b> (Nature Valley).</p>
+    <div id="scanResult"></div>
+    <button id="closeBarcode" class="btn btn-ghost btn-block" style="margin-top:16px">Close</button>
+  </div>
+</div>
+
+<!-- ============ OFFER DETAIL SHEET ============ -->
+<div class="scrim" id="offerScrim">
+  <div class="sheet" id="offerSheet">
+    <div class="grip"></div>
+    <div id="offerDetail"></div>
+  </div>
+</div>
+
+<!-- ============ STORE DETAIL SHEET ============ -->
+<div class="scrim" id="storeScrim">
+  <div class="sheet" id="storeSheet">
+    <div class="grip"></div>
+    <div id="storeDetail"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const REVIEW_DAYS = 7; // receipt eligibility window (FRD-06)
+
+/* ---------- in-memory member state (prototype only) ---------- */
+const state = {
+  balance: 85.00,
+  cashbackEarned: 0.00,
+  cashbackPending: 0.00,
+  offers: [],
+  submissions: [
+    { icon:"🧾", store:"CVS Pharmacy", detail:"Centrum Silver · $3.00 cash back", when:"2 days ago", status:"credited", label:"Credited" },
+    { icon:"🧾", store:"Walmart Supercenter", detail:"Under review — up to 24 hrs", when:"Yesterday", status:"pending", label:"Pending review" },
+    { icon:"🧾", store:"Giant Food", detail:"No eligible items found", when:"4 days ago", status:"declined", label:"Declined" },
+    { icon:"🧾", store:"Costco Wholesale", detail:"Reversed — duplicate receipt", when:"1 wk ago", status:"clawed", label:"Clawed back" },
+  ],
+};
+
+/* stores — which campaigns each carries (Ibotta-style "shop near you") */
+const STORES = [
+  { id:"cvs",     name:"CVS Pharmacy",        short:"CVS", color:"#CC0000", distance:"0.4 mi", address:"7809 Wisconsin Ave, Bethesda", carries:["CMP-1002","CMP-1004","CMP-1005","CMP-1007"] },
+  { id:"walmart", name:"Walmart Supercenter", short:"W",   color:"#0071CE", distance:"1.2 mi", address:"11181 Veirs Mill Rd, Wheaton",  carries:["CMP-1002","CMP-1004","CMP-1005","CMP-1001","CMP-1003","CMP-1006","CMP-1007","CMP-1008"] },
+  { id:"giant",   name:"Giant Food",          short:"G",   color:"#E11A2C", distance:"1.6 mi", address:"6204 Tuckerman Ln, North Bethesda", carries:["CMP-1001","CMP-1003","CMP-1006","CMP-1008"] },
+  { id:"costco",  name:"Costco Wholesale",    short:"C",   color:"#005DAA", distance:"3.1 mi", address:"7800 Wisconsin Ave, Bethesda", carries:["CMP-1004","CMP-1006","CMP-1002","CMP-1008"] },
+];
+
+/* Embedded copy of offers.json so the design renders when opened directly as a
+   file:// page (no server). When served by Flask, the live /api/offers wins. */
+const FALLBACK_OFFERS = [
+  {upc:"300450449108",product:"Centrum Silver Adult 50+ Multivitamin",brand:"Centrum",category:"otc",cashback:3.00,campaign_id:"CMP-1002",icon:"💊",expires:"2026-07-31",status:"active",tagline:"Daily multivitamin for adults 50+",sizes:[{size:"65 ct",upc:"300450449016",cashback:2.00},{size:"100 ct",upc:"300450449108",cashback:3.00},{size:"200 ct",upc:"300450449207",cashback:4.00}]},
+  {upc:"070074512525",product:"Ensure Original Nutrition Shake",brand:"Ensure",category:"otc",cashback:4.00,campaign_id:"CMP-1004",icon:"🥤",expires:"2026-07-15",status:"active",tagline:"Complete, balanced nutrition",sizes:[{size:"6 ct",upc:"070074512525",cashback:4.00},{size:"16 ct",upc:"070074512563",cashback:9.00}]},
+  {upc:"300450231024",product:"Tylenol Extra Strength",brand:"Tylenol",category:"otc",cashback:2.00,campaign_id:"CMP-1005",icon:"💊",expires:"2026-08-30",status:"active",tagline:"Pain reliever & fever reducer",sizes:[{size:"50 ct",upc:"300450231017",cashback:1.50},{size:"100 ct",upc:"300450231024",cashback:2.00},{size:"225 ct",upc:"300450231222",cashback:3.50}]},
+  {upc:"036000291452",product:"Nature Valley Crunchy Granola Bars",brand:"Nature Valley",category:"grocery",cashback:1.50,campaign_id:"CMP-1001",icon:"🥜",expires:"2026-07-31",status:"active",tagline:"Whole-grain oats & honey",sizes:[{size:"6 bars",upc:"036000291452",cashback:1.50},{size:"12 bars",upc:"036000291469",cashback:2.50}]},
+  {upc:"041220576456",product:"Campbell's Healthy Request Low-Sodium Soup",brand:"Campbell's",category:"food-and-produce",cashback:0.75,campaign_id:"CMP-1003",icon:"🥫",expires:"2026-09-15",status:"active",tagline:"Heart-healthy, low sodium",sizes:[{size:"10.5 oz can",upc:"041220576456",cashback:0.75}]},
+  {upc:"030000010204",product:"Quaker Old Fashioned Oats",brand:"Quaker",category:"food-and-produce",cashback:1.25,campaign_id:"CMP-1006",icon:"🌾",expires:"2026-08-01",status:"active",tagline:"100% whole grain",sizes:[{size:"18 oz",upc:"030000010198",cashback:0.75},{size:"42 oz",upc:"030000010204",cashback:1.25}]},
+  {upc:"070074679006",product:"Glucerna Nutrition Shake",brand:"Glucerna",category:"otc",cashback:3.50,campaign_id:"CMP-1007",icon:"🥛",expires:"2026-06-30",status:"exhausted",tagline:"Designed for people with diabetes",sizes:[{size:"6 ct",upc:"070074679006",cashback:3.50}]},
+  {upc:"2113007100",product:"Milk",brand:"",category:"food-and-produce",cashback:1.00,campaign_id:"CMP-1008",icon:"🥛",expires:"2026-12-31",status:"active",tagline:"Vitamin D or 2% — $1 back",sizes:[{size:"Vitamin D",upc:"2113007100",cashback:1.00},{size:"2%",upc:"2113007101",cashback:1.00}]},
+];
+
+/* ---------- clipped offers (Ibotta-style "clip then redeem") ---------- */
+state.clipped = new Set(JSON.parse(localStorage.getItem("clippedOffers")||"[]"));
+function saveClipped(){ localStorage.setItem("clippedOffers", JSON.stringify([...state.clipped])); }
+function isClipped(cmp){ return state.clipped.has(cmp); }
+function clippedActiveOffers(){ return [...state.clipped].map(getOffer).filter(o=>o && o.status!=="exhausted"); }
+window.toggleClip=function(cmp){
+  const o=getOffer(cmp); if(o && o.status==="exhausted") return;       // can't clip an exhausted offer
+  if(state.clipped.has(cmp)) state.clipped.delete(cmp); else state.clipped.add(cmp);
+  saveClipped(); renderOffers(); renderClipped();
+};
+
+/* ---------- tab switching ---------- */
+document.querySelectorAll(".seg-tab").forEach(t=>{
+  t.addEventListener("click",()=>switchTab(t.dataset.tab));
+});
+document.querySelectorAll("[data-goto]").forEach(el=>{
+  el.addEventListener("click",()=>switchTab(el.dataset.goto));
+});
+function switchTab(name){
+  document.querySelectorAll(".seg-tab").forEach(t=>t.classList.toggle("active",t.dataset.tab===name));
+  document.querySelectorAll(".tab-panel").forEach(p=>p.classList.toggle("active",p.id==="tab-"+name));
+  const fw=document.getElementById("fabWrap"); if(fw) fw.style.display=(name==="shop")?"flex":"none";
+  if(name==="shop") maybeShowDisclosure();
+  $("main")?.scrollTo?.(0,0);
+  document.querySelector("main").scrollTop = 0;
+}
+
+/* ---------- helpers ---------- */
+function money(v){ return "$"+Number(v||0).toFixed(2); }
+function esc(s){ return String(s==null?"":s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+function upcVariants(code){
+  const d=String(code||"").replace(/\D/g,""); const v=new Set();
+  if(!d) return v;
+  v.add(d);
+  if(d.length===13&&d.startsWith("0")) v.add(d.slice(1));   // EAN-13 -> UPC-A
+  if(d.length===12) v.add("0"+d);                            // UPC-A -> EAN-13
+  // UPC-A/EAN "core" = manufacturer+product digits (drop the leading
+  // number-system/pad digit(s) and the trailing check digit). Lets a full
+  // 12/13-digit scan reconcile with a 10-digit catalog code and vice-versa.
+  if(d.length>=12) v.add(d.slice(d.length-11, d.length-1));
+  if(d.length===11) v.add(d.slice(0,10));                    // drop check digit only
+  return v;
+}
+function fmtExp(d){
+  if(!d) return "";
+  try{ return new Date(d+"T00:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}); }catch(e){ return d; }
+}
+let toastTimer;
+function toast(msg){
+  const t=$("toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove("show"),2600);
+}
+
+/* ---------- render dynamic UI ---------- */
+function renderStrip(){
+  $("cbEarned").textContent = money(state.cashbackEarned);
+  $("cbPending").textContent = money(state.cashbackPending);
+  $("balance").textContent = state.balance.toFixed(2);
+}
+function cbDisplay(o){
+  const amts=(o.sizes&&o.sizes.length?o.sizes.map(s=>Number(s.cashback)):[Number(o.cashback)]);
+  const max=Math.max(...amts), min=Math.min(...amts);
+  return (max!==min) ? "Up to "+money(max)+" back" : money(max)+" back";
+}
+const CAT_LABEL={otc:"OTC", grocery:"Grocery", "food-and-produce":"Food & Produce"};
+function renderFilters(){
+  const cs=$("catSel"), ss=$("sortSel"); if(!cs||!ss) return;
+  state.activeCat = state.activeCat || "all";
+  state.sortBy = state.sortBy || "savings-desc";
+  const cats=[...new Set(state.offers.map(o=>o.category).filter(Boolean))];
+  cs.innerHTML=[`<option value="all">All categories</option>`]
+    .concat(cats.map(c=>`<option value="${esc(c)}">${esc(CAT_LABEL[c]||c)}</option>`)).join("");
+  cs.value=state.activeCat; ss.value=state.sortBy;
+  cs.onchange=()=>{ state.activeCat=cs.value; renderOffers(); };
+  ss.onchange=()=>{ state.sortBy=ss.value; renderOffers(); };
+}
+function renderOffers(){
+  const grid=$("offerGrid");
+  const cat=state.activeCat||"all", sort=state.sortBy||"savings-desc";
+  const sav=o=>offerMaxCash(o), nm=o=>(o.product||"").toLowerCase();
+  let list=state.offers.filter(o=> cat==="all" || o.category===cat);
+  list=list.slice().sort((a,b)=>{
+    if(sort==="savings-asc") return sav(a)-sav(b);
+    if(sort==="az") return nm(a).localeCompare(nm(b));
+    if(sort==="za") return nm(b).localeCompare(nm(a));
+    return sav(b)-sav(a);   // savings-desc (default)
+  });
+  if(!list.length){ grid.innerHTML=`<div class="center-load" style="grid-column:1/-1">No offers in this category.</div>`; return; }
+  grid.innerHTML = list.map(o=>{
+    const ex = o.status==="exhausted";
+    return `<div class="offer ${ex?"exhausted":"clickable"}" data-cmp="${esc(o.campaign_id)}">
+      ${ex?`<span class="ribbon">Fully claimed</span>`:""}
+      <div class="ic">${o.image?`<img src="${esc(o.image)}" alt="${esc(o.product||"")}" loading="lazy">`:(o.icon||"🛒")}</div>
+      <div class="brand-n">${esc(o.brand||"")}</div>
+      <div class="prod">${esc(o.product||"")}</div>
+      <div class="cb">${ex?money(o.cashback)+" back":cbDisplay(o)}</div>
+      <div class="exp">${ex?"Budget exhausted":(o.expires?("Expires "+fmtExp(o.expires)):"")}</div>
+    </div>`;
+  }).join("");
+  grid.querySelectorAll(".offer[data-cmp]").forEach(el=>{
+    el.addEventListener("click",()=>openOffer(el.dataset.cmp));
+  });
+}
+function renderFeatured(){
+  const el=$("featuredBanner"); if(!el) return;
+  const active=state.offers.filter(o=>o.status!=="exhausted");
+  if(!active.length){ el.innerHTML=""; return; }
+  const o=active.slice().sort((a,b)=>offerMaxCash(b)-offerMaxCash(a))[0];   // highest-value active offer
+  el.innerHTML=`<div class="feat-banner clickable" data-cmp="${esc(o.campaign_id)}">
+    <div class="fb-ic">${o.image?`<img src="${esc(o.image)}" alt="" loading="lazy">`:(o.icon||"🛒")}</div>
+    <div class="fb-body">
+      <div class="fb-tag">★ Featured reward</div>
+      <div class="fb-name">${esc(o.product||"")}</div>
+      ${o.tagline?`<div class="fb-tagline">${esc(o.tagline)}</div>`:""}
+    </div>
+    <div class="fb-cb">${cbDisplay(o).replace(" back","")}<span>back</span></div>
+  </div>`;
+  el.querySelector(".feat-banner").addEventListener("click",()=>openOffer(o.campaign_id));
+}
+function renderClipped(){
+  const all=[...state.clipped].map(getOffer).filter(Boolean);
+  const badge=$("clipBadge"); if(badge) badge.textContent = all.length+" clipped";
+  const strip=$("clippedStrip"); if(!strip) return;
+  if(!all.length){ strip.innerHTML=""; return; }
+  strip.innerHTML=`<div class="clipped-strip">
+    <span class="cs-n">${all.length}</span> offer${all.length===1?"":"s"} clipped — snap a receipt to redeem them all.
+    <div>${all.map(o=>`<span class="clip-chip">${o.icon||"🏷️"} ${esc(o.brand||o.product)}
+      <button title="Unclip" onclick="toggleClip('${esc(o.campaign_id)}')">✕</button></span>`).join("")}</div>
+  </div>`;
+  renderCart();
+}
+
+/* ---------- floating cart + receipt FABs (Ibotta-style) ---------- */
+function offerMaxCash(o){ const a=(o.sizes&&o.sizes.length?o.sizes.map(s=>+s.cashback):[+o.cashback]); return Math.max(...a); }
+function renderCart(){
+  const all=clippedActiveOffers();
+  const cnt=$("cartCount"); if(cnt) cnt.textContent=all.length;
+  const body=$("cartBody"); if(!body) return;
+  if(!all.length){
+    body.innerHTML=`<div class="cart-empty">No offers clipped yet.<br>Browse offers and tap “Clip” to add them here.</div>
+      <button class="btn btn-primary btn-block" onclick="closeCart();switchTab('shop')">Browse offers</button>`;
+    return;
+  }
+  const total=all.reduce((s,o)=>s+offerMaxCash(o),0);
+  body.innerHTML = all.map(o=>`<div class="cart-row">
+      <div class="ci">${o.icon||"🏷️"}</div>
+      <div><div class="cn">${esc(o.product)}</div><div class="cm">${esc(o.brand||"")}${o.expires?" · exp "+fmtExp(o.expires):""}</div></div>
+      <div class="cc">${cbDisplay(o).replace(" back","")}</div>
+      <button class="cx" title="Unclip" onclick="toggleClip('${esc(o.campaign_id)}')">✕</button>
+    </div>`).join("")
+    + `<div class="cart-total"><span>Potential cash back</span><span class="amt">up to ${money(total)}</span></div>
+       <button class="btn btn-primary btn-block" style="margin-top:14px" onclick="closeCart();openReceipt()">Snap a receipt to redeem</button>`;
+}
+/* ---------- Shop disclosure modal (powered by Sunny Benefits, not the plan) ---------- */
+let shopDisclosureShown=false;
+const disclosureScrim=$("disclosureScrim");
+const DISCLOSURE_DEFAULT="Got it — show me the offers";
+let pendingNav=null;   // set when the disclosure is gating a link-out to the Cash Back site
+function maybeShowDisclosure(){ if(!shopDisclosureShown){ shopDisclosureShown=true; $("disclosureOk").textContent=DISCLOSURE_DEFAULT; disclosureScrim.classList.add("open"); } }
+// Link-out card: show the plan-disassociation disclosure first, then navigate.
+$("cashbackSiteCard").addEventListener("click",e=>{
+  e.preventDefault();
+  pendingNav=$("cashbackSiteCard").getAttribute("href");
+  $("disclosureOk").textContent="Got it — continue to Cash Back ›";
+  disclosureScrim.classList.add("open");
+});
+$("disclosureOk").addEventListener("click",()=>{
+  disclosureScrim.classList.remove("open");
+  if(pendingNav){ const dest=pendingNav; pendingNav=null; window.location.href=dest; }
+});
+disclosureScrim.addEventListener("click",e=>{ if(e.target===disclosureScrim){ pendingNav=null; $("disclosureOk").textContent=DISCLOSURE_DEFAULT; disclosureScrim.classList.remove("open"); } });
+
+$("fabReceipt").addEventListener("click",openReceipt);
+function renderStores(){
+  $("storeList").innerHTML = STORES.map(s=>{
+    const n = s.carries.filter(c=>state.offers.some(o=>o.campaign_id===c)).length;
+    return `<div class="store" data-store="${s.id}">
+      <div class="logo" style="background:${s.color}">${esc(s.short)}</div>
+      <div class="b"><div class="n">${esc(s.name)}</div><div class="m">${esc(s.distance)} · ${n} cashback offer${n===1?"":"s"}</div></div>
+      <span class="chev">›</span></div>`;
+  }).join("");
+  $("storeList").querySelectorAll(".store[data-store]").forEach(el=>{
+    el.addEventListener("click",()=>openStore(el.dataset.store));
+  });
+}
+function renderSubs(){
+  $("subList").innerHTML = state.submissions.map(s=>`
+    <div class="sub">
+      <div class="si">${s.icon||"🧾"}</div>
+      <div class="sb"><div class="sn">${esc(s.store)}</div><div class="sd">${esc(s.detail)} · ${esc(s.when)}</div></div>
+      <span class="status ${s.status}">${esc(s.label)}</span>
+    </div>`).join("");
+}
+
+/* ---------- load offers from backend (real catalog) ---------- */
+fetch("/api/offers").then(r=>r.json()).then(list=>{
+  state.offers = (Array.isArray(list)&&list.length)?list:FALLBACK_OFFERS;
+  renderOffers(); renderFeatured(); renderFilters(); renderStores();
+}).catch(()=>{ state.offers=FALLBACK_OFFERS; renderOffers(); renderFeatured(); renderFilters(); renderStores(); });
+
+fetch("/api/config-status").then(r=>r.json()).then(d=>{
+  if(!d.configured) $("configWarn").classList.remove("hidden");
+}).catch(()=>{});
+
+renderStrip(); renderSubs();
+
+/* =================== RECEIPT FLOW =================== */
+const receiptScrim=$("receiptScrim"), drop=$("drop"), fileInput=$("file"),
+      preview=$("preview"), submitBtn=$("submitReceipt");
+let chosenFile=null;
+
+$("openReceipt").addEventListener("click",openReceipt);
+$("closeReceipt").addEventListener("click",closeReceipt);
+function openReceipt(){ resetReceipt(); applyCaptureMode(); checkAwsStatus(); receiptScrim.classList.add("open"); }
+function closeReceipt(){ stopCamera(); receiptScrim.classList.remove("open"); }
+receiptScrim.addEventListener("click",e=>{ if(e.target===receiptScrim) closeReceipt(); });
+
+function resetReceipt(){
+  chosenFile=null; fileInput.value=""; preview.innerHTML="";
+  submitBtn.disabled=true; $("rcStep1").classList.remove("hidden");
+  $("rcResult").classList.add("hidden"); $("rcResult").innerHTML="";
+  submitBtn.textContent="Submit receipt";
+  stopCamera();
+}
+drop.addEventListener("click",()=>fileInput.click());
+["dragover","dragenter"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add("drag");}));
+["dragleave","drop"].forEach(e=>drop.addEventListener(e,()=>drop.classList.remove("drag")));
+drop.addEventListener("drop",ev=>{ ev.preventDefault(); if(ev.dataTransfer.files.length) handleFile(ev.dataTransfer.files[0]); });
+fileInput.addEventListener("change",()=>{ if(fileInput.files.length) handleFile(fileInput.files[0]); });
+function handleFile(f){
+  chosenFile=f; submitBtn.disabled=false;
+  if(f.type.startsWith("image/")){ preview.innerHTML=`<img src="${URL.createObjectURL(f)}" alt="receipt preview"/>`; }
+  else{ preview.innerHTML=`<p class="muted small">Selected: ${esc(f.name)}</p>`; }
+}
+
+/* Match line items to active offers.
+   Tier 1 — UPC (printed or recovered): via="upc", confidence="verified".
+   Tier 2 — fuzzy name, scored: confidence "high" | "medium" | "low".
+   Outcome (decided in showReceiptResult): UPC + high => auto-credit;
+   medium/low => scan-to-verify (then credit or decline). */
+function matchReceipt(veryfi){
+  const items = Array.isArray(veryfi.line_items)?veryfi.line_items:[];
+  const all=[];
+  for(const li of items){
+    const desc=(li.description||li.text||"").toLowerCase();
+    const liUpcs=new Set();
+    [li.upc,li.sku,li.reference].forEach(c=>{ if(c) upcVariants(c).forEach(x=>liUpcs.add(x)); });
+    (li.product_details||[]).forEach(pd=>[pd.ean,pd.gtin_14,pd.upc].forEach(c=>{ if(c) upcVariants(c).forEach(x=>liUpcs.add(x)); }));
+    let found=null, via=null, matchSize=null, cash=null, confidence=null;
+    for(const o of state.offers){
+      if(o.status==="exhausted") continue;
+      const codes=[{size:null,upc:o.upc,cashback:o.cashback}].concat(o.sizes||[]);
+      const sz=codes.find(c=>[...upcVariants(c.upc)].some(x=>liUpcs.has(x)));
+      if(sz){ found=o; via="upc"; matchSize=sz.size; cash=sz.cashback!=null?sz.cashback:o.cashback; confidence="verified"; break; }
+    }
+    if(!found && desc){
+      let best=null, bestScore=-1;
+      for(const o of state.offers){
+        if(o.status==="exhausted") continue;
+        const brand=(o.brand||"").toLowerCase();
+        const tokens=(o.product||"").toLowerCase().split(/[^a-z0-9]+/).filter(w=>w.length>3);
+        const brandHit=!!(brand && desc.includes(brand));
+        const hits=tokens.filter(t=>desc.includes(t));
+        const strong=hits.filter(t=>t.length>=5);          // distinctive (longer) tokens
+        if(!brandHit && hits.length===0) continue;          // no signal at all
+        const conf = (brandHit && hits.length>=1) ? "high"
+                   : (brandHit || strong.length>=1) ? "medium" : "low";
+        const score=(brandHit?3:0)+hits.length+strong.length;
+        if(score>bestScore){ bestScore=score; best={o,conf}; }
+      }
+      if(best){ found=best.o; via="name"; confidence=best.conf; cash=best.o.cashback; }
+    }
+    if(found && !all.some(m=>m.offer.campaign_id===found.campaign_id)){
+      all.push({offer:found, line:li, via, size:matchSize, cashback:Number(cash||found.cashback||0), confidence});
+    }
+  }
+  return {redeemed:all, suggested:[]};
+}
+
+/* Send an uploaded receipt image through the SAME AWS Textract pipeline the
+   camera uses (get-upload-url -> PUT -> poll), so upload works on the live site. */
+async function uploadToAws(blob, onStatus){
+  const meta = await fetch(API_BASE + "/aws/get-upload-url", {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({content_type:blob.type||"image/jpeg"})
+  }).then(r=>r.json());
+  const put = await fetch(meta.upload_url, {
+    method:"PUT", headers:{"Content-Type":blob.type||"image/jpeg","X-User-Id":"member-demo"}, body:blob
+  });
+  if(!put.ok) throw new Error("Upload failed (HTTP "+put.status+").");
+  for(let i=1;i<=60;i++){
+    await new Promise(r=>setTimeout(r,2000));
+    const s = await fetch(API_BASE + "/aws/analyze-status?job="+encodeURIComponent(meta.job_id)).then(r=>r.json());
+    if(onStatus) onStatus(s,i);
+    if(s.status==="done") return s.result;
+    if(s.status==="rejected"){ const e=new Error(s.error||"Receipt rejected."); e.rejected=true; e.result=s.result; throw e; }
+    if(s.status==="failed") throw new Error(s.error||"Processing failed.");
+    if(s.status==="unknown") throw new Error("Job not found on server.");
+  }
+  throw new Error("Timed out waiting for OCR result.");
+}
+
+submitBtn.addEventListener("click",async()=>{
+  if(!chosenFile) return;
+  submitBtn.disabled=true;
+  submitBtn.innerHTML=`<span class="spinner"></span>Uploading…`;
+  try{
+    const result = await uploadToAws(chosenFile, (s)=>{
+      submitBtn.innerHTML=`<span class="spinner"></span>${s.status==="processing"?"Analyzing…":"Uploading…"}`;
+    });
+    showReceiptResult(result);
+  }catch(err){
+    if(err && err.rejected) showReceiptError("Receipt rejected — "+err.message, err.result);
+    else showReceiptError(err && err.message ? err.message : "Couldn't process the receipt.");
+  }finally{ submitBtn.innerHTML="Submit receipt"; submitBtn.disabled=false; }
+});
+
+/* =================== CAMERA CAPTURE (AWS Textract SDK) =================== */
+/* The SDK now renders its own full-screen guided capture UI (top bar, framing
+   brackets, live coaching, auto-capture, flash, multi-page thumbnails) and runs
+   the upload + analyze pipeline. We just launch it and show the result. */
+let captureSDK = null;
+const API_BASE = (window.BACKEND_URL || "").replace(/\/$/, "");
+
+/* Camera capture is offered only on touch devices (phones/tablets). Desktops
+   get upload only. Primary-pointer "coarse" catches phones/tablets (incl. iPad,
+   whose UA now reads as desktop) while excluding mouse-driven touch laptops. */
+const IS_TOUCH_DEVICE = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches)
+  || /Android|iPhone|iPad|iPod|Mobile|Tablet|Silk|Kindle/i.test(navigator.userAgent);
+const CAN_CAMERA = IS_TOUCH_DEVICE && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+
+function applyCaptureMode(){
+  const cam = $("useCamera"), divider = $("camOrDivider");
+  if(cam) cam.classList.toggle("hidden", !CAN_CAMERA);
+  if(divider) divider.classList.toggle("hidden", !CAN_CAMERA);
+  // Top section is upload-only on every device; camera lives in its own button.
+  const dropStrong = document.querySelector("#drop strong");
+  if(dropStrong) dropStrong.textContent = "Upload a receipt";
+}
+
+async function checkAwsStatus(){
+  const w = $("awsWarn");
+  try{
+    const d = await (await fetch(API_BASE + "/aws/status")).json();
+    if(!d.configured){
+      w.textContent = "AWS Textract not configured — " + (d.detail||"") + " You can still capture, but analysis will fail until credentials are set.";
+      w.classList.remove("hidden");
+    } else { w.classList.add("hidden"); }
+  }catch(e){ w.classList.add("hidden"); }  // not served by Flask yet — stay quiet
+}
+
+function stopCamera(){ if(captureSDK){ try{ captureSDK.close(); }catch(e){} captureSDK=null; } }
+
+$("useCamera").addEventListener("click", async ()=>{
+  if(typeof ReceiptCaptureSDK==="undefined"){ toast("Capture SDK failed to load."); return; }
+  captureSDK = new ReceiptCaptureSDK({
+    userId: "member-demo",
+    autoCapture: true,
+    endpoints: { uploadUrl: API_BASE + "/aws/get-upload-url", status: API_BASE + "/aws/analyze-status" },
+  });
+  try{
+    const result = await captureSDK.captureFlow();   // full-screen capture + upload + analyze
+    captureSDK = null;
+    showReceiptResult(result);                        // render in the receipt sheet
+  }catch(err){
+    captureSDK = null;
+    if(err && err.cancelled) return;                  // user closed the camera — stay on step 1
+    showReceiptError(err && err.message ? err.message : "Capture failed.");
+  }
+});
+
+function showReceiptError(msg, detail){
+  $("rcStep1").classList.add("hidden");
+  const r=$("rcResult"); r.classList.remove("hidden");
+  r.innerHTML=`
+    <div class="result-hero"><div class="rj">⚠️</div><div class="rt">Something went wrong</div></div>
+    <div class="banner err">${esc(msg)}</div>
+    ${detail?`<details><summary>Details</summary><pre>${esc(typeof detail==="string"?detail:JSON.stringify(detail,null,2))}</pre></details>`:""}
+    <button class="btn btn-ghost btn-block" style="margin-top:14px" onclick="resetReceiptAndRetry()">Try again</button>
+    <button class="btn btn-primary btn-block" style="margin-top:10px" onclick="closeReceiptDone()">Done</button>`;
+}
+window.resetReceiptAndRetry=()=>{ resetReceipt(); };
+window.closeReceiptDone=()=>{ closeReceipt(); };
+
+let currentRx=null;     // current receipt result being acted on
+let verifyIdx=null;     // index of the line item being barcode-verified (null = normal scan)
+
+function rxSummaryHtml(d){
+  return `<dl class="kv">
+      <div><dt>Store</dt><dd>${esc((d.vendor&&d.vendor.name)||"—")}</dd></div>
+      <div><dt>Date</dt><dd>${esc(d.date?String(d.date).slice(0,10):"—")}</dd></div>
+      <div><dt>Total</dt><dd>${d.total!=null?money(d.total):"—"}</dd></div>
+      <div><dt>Items read</dt><dd>${Array.isArray(d.line_items)?d.line_items.length:0}</dd></div>
+    </dl>
+    <details><summary>View raw OCR JSON</summary><pre>${esc(JSON.stringify(d,null,2))}</pre></details>`;
+}
+
+function showReceiptResult(d){
+  const vendor=(d.vendor&&d.vendor.name)||"Unknown store";
+  const date=d.date? String(d.date).slice(0,10):"—";
+  const {redeemed}=matchReceipt(d);
+  $("rcStep1").classList.add("hidden");
+  $("rcResult").classList.remove("hidden");
+
+  if(redeemed.length===0){
+    state.submissions.unshift({icon:"🧾",store:vendor,detail:"No eligible items found",when:"Just now",status:"declined",label:"Declined"});
+    renderSubs();
+    $("rcResult").innerHTML=`
+      <div class="result-hero"><div class="rj">🔍</div><div class="rt">No eligible items found</div>
+        <div class="rd">We read your receipt but didn't find any products matching an active cash back offer.</div></div>
+      ${rxSummaryHtml(d)}
+      <button class="btn btn-primary btn-block" style="margin-top:14px" onclick="closeReceiptDone();switchTab('shop')">View active offers</button>
+      <button class="btn btn-ghost btn-block" style="margin-top:10px" onclick="closeReceiptDone()">Done</button>`;
+    return;
+  }
+
+  // Temporal gate (separate from matching): out-of-window -> manual review for the whole receipt.
+  let dateWarn="";
+  if(date!=="—"){ const days=Math.round((Date.now()-new Date(date+"T00:00:00").getTime())/86400000);
+    if(days>REVIEW_DAYS) dateWarn=`Purchased ${days} days ago — outside the ${REVIEW_DAYS}-day claim window.`; }
+  if(dateWarn){
+    const totalCash=redeemed.reduce((s,m)=>s+m.cashback,0);
+    state.cashbackPending+=totalCash;
+    state.submissions.unshift({icon:"🧾",store:vendor,detail:`${redeemed.length} item(s) · ${money(totalCash)} pending`,when:"Just now",status:"pending",label:"Pending review"});
+    renderStrip(); renderSubs();
+    $("rcResult").innerHTML=`
+      <div class="result-hero"><div class="rj">⏳</div><div class="rt">${money(totalCash)} pending review</div>
+        <div class="rd">You'll hear back within 24 hours.</div></div>
+      <div class="banner warn">${esc(dateWarn)}</div>${rxSummaryHtml(d)}
+      <button class="btn btn-primary btn-block" style="margin-top:14px" onclick="closeReceiptDone()">Got it</button>`;
+    toast("Receipt submitted — pending review");
+    return;
+  }
+
+  // Classify: UPC + HIGH fuzzy => auto-credit; MEDIUM/LOW fuzzy => scan-to-verify.
+  currentRx={ raw:d, vendor,
+    items: redeemed.map(m=>({offer:m.offer, size:m.size, cashback:m.cashback, via:m.via, confidence:m.confidence,
+      status:(m.via==="upc"||m.confidence==="high")?"credited":"toverify"})) };
+  const autoCash=currentRx.items.filter(i=>i.status==="credited").reduce((s,i)=>s+i.cashback,0);
+  if(autoCash>0){ state.cashbackEarned+=autoCash; state.balance+=autoCash; }
+  renderStrip();
+  renderRxResult();
+}
+
+function rxRow(i){
+  const idx=currentRx.items.indexOf(i);
+  const tag = i.status==="credited" ? `<span class="tag">${i.via==="upc"?"UPC match":(i.verified?"Scan verified":"Name match")}</span>`
+            : i.status==="declined" ? `<span class="tag gray">Not verified</span>`
+            : `<span class="tag warn">Name match · ${i.confidence}</span>`;
+  const right = i.status==="toverify"
+    ? `<button class="btn btn-brand" style="width:auto;padding:8px 12px;font-size:12px" onclick="startVerify(${idx})">Scan to verify +${money(i.cashback)}</button>`
+    : `<span class="mc"${i.status==="declined"?' style="color:var(--ink-400)"':''}>${i.status==="credited"?"+"+money(i.cashback):"—"}</span>`;
+  return `<div class="matched-item"${i.status==="declined"?' style="opacity:.6"':''}><span>${i.offer.icon||"•"} ${esc(i.offer.product)}${i.size?" ("+esc(i.size)+")":""} ${tag}</span>${right}</div>`;
+}
+
+function renderRxResult(){
+  const rx=currentRx; if(!rx) return;
+  const toverify=rx.items.filter(i=>i.status==="toverify");
+  const credited=rx.items.filter(i=>i.status==="credited");
+  const creditedCash=credited.reduce((s,i)=>s+i.cashback,0);
+  const hero = toverify.length
+    ? `<div class="result-hero"><div class="rj">🔎</div><div class="rt">Verify ${toverify.length} item${toverify.length>1?"s":""} to claim</div>
+        <div class="rd">These were matched by product name. Scan each one's barcode to confirm the purchase and claim its cash back.${credited.length?" "+money(creditedCash)+" already credited.":""}</div></div>`
+    : `<div class="result-hero"><div class="rj">🎉</div><div class="rt">${money(creditedCash)} cash back approved!</div>
+        <div class="rd">Credited to your card. New balance ${money(state.balance)}.</div></div>`;
+  const btn = toverify.length
+    ? `<button class="btn btn-ghost btn-block" style="margin-top:14px" onclick="finishRx()">Done — decline the rest</button>`
+    : `<button class="btn btn-primary btn-block" style="margin-top:14px" onclick="finishRx()">Done</button>`;
+  $("rcResult").innerHTML=hero+`<div style="margin:6px 2px">${rx.items.map(rxRow).join("")}</div>`+rxSummaryHtml(rx.raw)+btn;
+}
+
+window.startVerify=function(idx){
+  verifyIdx=idx;
+  const it=currentRx.items[idx];
+  $("barcodeTitle").textContent="Verify "+(it.offer.brand||it.offer.product);
+  $("barcodeSub").textContent="Scan this product's barcode to confirm your purchase and claim "+money(it.cashback)+".";
+  scanResult.innerHTML=`<div class="banner info">Verifying: ${esc(it.offer.product)}${it.size?" ("+esc(it.size)+")":""}</div>`;
+  manualUpc.value=""; barcodeScrim.classList.add("open");
+};
+
+function verifyScan(upc){
+  const it=currentRx&&currentRx.items[verifyIdx]; if(!it){ closeBarcode(); return; }
+  const w=upcVariants(String(upc).replace(/\D/g,""));
+  const codes=[{upc:it.offer.upc}].concat(it.offer.sizes||[]);
+  const ok=codes.some(c=>[...upcVariants(c.upc)].some(x=>w.has(x)));
+  if(ok){
+    it.status="credited"; it.verified=true; state.cashbackEarned+=it.cashback; state.balance+=it.cashback; renderStrip();
+    verifyIdx=null; closeBarcode(); renderRxResult();
+    toast(`${money(it.cashback)} verified & added 🎉`);
+  }else{
+    const exp=[it.offer.upc].concat((it.offer.sizes||[]).map(s=>s.upc)).filter(Boolean).join(", ");
+    scanResult.innerHTML=`<div class="banner err">That barcode isn't ${esc(it.offer.product)}. Scan the correct product to claim, or close to skip.</div>
+      <div class="muted small" style="margin-top:6px">Scanned <code>${esc(String(upc).replace(/\\D/g,""))}</code> · expected <code>${esc(exp)}</code></div>`;
+  }
+}
+
+window.finishRx=function(){
+  if(currentRx){
+    const credited=currentRx.items.filter(i=>i.status==="credited");
+    const declined=currentRx.items.filter(i=>i.status==="toverify");
+    declined.forEach(i=>i.status="declined");
+    const cash=credited.reduce((s,i)=>s+i.cashback,0);
+    if(credited.length) state.submissions.unshift({icon:"🧾",store:currentRx.vendor,detail:`${[...new Set(credited.map(i=>i.offer.brand))].join(", ")} · ${money(cash)} cash back`,when:"Just now",status:"credited",label:"Credited"});
+    if(declined.length) state.submissions.unshift({icon:"🧾",store:currentRx.vendor,detail:`${declined.length} item(s) couldn't be verified`,when:"Just now",status:"declined",label:"Declined"});
+    renderSubs();
+  }
+  currentRx=null; verifyIdx=null; closeReceipt();
+};
+
+/* =================== BARCODE FLOW =================== */
+const barcodeScrim=$("barcodeScrim"), scanStart=$("scanStart"), scanStop=$("scanStop"),
+      scanResult=$("scanResult"), manualUpc=$("manualUpc"), manualCheck=$("manualCheck");
+let qr=null;
+
+const BARCODE_TITLE="Scan a product", BARCODE_SUB="Check a barcode against active offers. Decoding happens in your browser — only the UPC number is sent, never an image.";
+function resetBarcodeMode(){ verifyIdx=null; $("barcodeTitle").textContent=BARCODE_TITLE; $("barcodeSub").textContent=BARCODE_SUB; }
+$("openBarcode").addEventListener("click",()=>{ resetBarcodeMode(); scanResult.innerHTML=""; barcodeScrim.classList.add("open"); });
+$("closeBarcode").addEventListener("click",closeBarcode);
+barcodeScrim.addEventListener("click",e=>{ if(e.target===barcodeScrim) closeBarcode(); });
+async function closeBarcode(){ if(qr){ try{await qr.stop();}catch{} } resetScanButtons(); resetBarcodeMode(); barcodeScrim.classList.remove("open"); }
+function resetScanButtons(){ scanStart.classList.remove("hidden"); scanStop.classList.add("hidden"); }
+
+function checkUpc(upc){
+  const scanned=String(upc).replace(/\D/g,"");
+  const w=upcVariants(scanned);
+  let d={eligible:false,scanned_upc:scanned};
+  for(const o of state.offers){
+    const codes=[{upc:o.upc,cashback:o.cashback,size:null}].concat(o.sizes||[]);
+    const m=codes.find(c=>[...upcVariants(c.upc)].some(x=>w.has(x)));
+    if(m){ d=Object.assign({eligible:true,scanned_upc:scanned},o); if(m.size){ d.matched_size=m.size; d.cashback=m.cashback; } break; }
+  }
+    if(d.eligible){
+      const ex = d.status==="exhausted";
+      scanResult.innerHTML=`
+        <div class="result-hero" style="padding-top:8px"><div class="rj">${ex?"⌛":"✅"}</div>
+          <div class="rt">${ex?"Offer fully claimed":money(d.cashback)+" cash back"}</div>
+          <div class="rd">${esc(d.product||"")}</div></div>
+        ${ex
+          ? `<div class="banner warn">This campaign's budget is exhausted — the offer is no longer available.</div>`
+          : `<div class="banner ok">Eligible! Buy it and snap your receipt to claim ${money(d.cashback)}.</div>`}
+        <div class="small muted" style="text-align:center">UPC ${esc(d.scanned_upc)} · ${esc(d.brand||"")} · ${esc(d.campaign_id||"")}</div>
+        ${ex?"":`<button class="btn btn-primary btn-block" style="margin-top:14px" onclick="fromBarcodeToReceipt()">Snap my receipt</button>`}`;
+    }else{
+      scanResult.innerHTML=`
+        <div class="result-hero" style="padding-top:8px"><div class="rj">🔍</div><div class="rt">No active offer</div>
+          <div class="rd">No cashback offer for UPC ${esc(d.scanned_upc||upc)}.</div></div>
+        <div class="banner info">Browse the featured offers to see what's eligible right now.</div>`;
+    }
+}
+window.fromBarcodeToReceipt=()=>{ closeBarcode().then(()=>openReceipt()); };
+
+scanStart.addEventListener("click",async()=>{
+  if(typeof Html5Qrcode==="undefined"){ scanResult.innerHTML=`<div class="banner err">Scanner library didn't load (check your connection).</div>`; return; }
+  qr=new Html5Qrcode("reader");
+  scanStart.classList.add("hidden"); scanStop.classList.remove("hidden"); scanResult.innerHTML="";
+  const config={ fps:10, qrbox:{width:280,height:160},
+    formatsToSupport:[Html5QrcodeSupportedFormats.UPC_A,Html5QrcodeSupportedFormats.UPC_E,Html5QrcodeSupportedFormats.EAN_13,Html5QrcodeSupportedFormats.EAN_8] };
+  try{
+    await qr.start({facingMode:"environment"},config,async(decoded)=>{
+      try{await qr.stop();}catch{} resetScanButtons(); if(verifyIdx!=null) verifyScan(decoded); else checkUpc(decoded);
+    },()=>{});
+  }catch(err){
+    scanResult.innerHTML=`<div class="banner err">Camera error: ${esc(String(err))}<br><small>Camera needs http://localhost or HTTPS and permission.</small></div>`;
+    resetScanButtons();
+  }
+});
+scanStop.addEventListener("click",async()=>{ if(qr){try{await qr.stop();}catch{}} resetScanButtons(); });
+manualCheck.addEventListener("click",()=>{ const v=manualUpc.value.trim(); if(v){ if(verifyIdx!=null) verifyScan(v); else checkUpc(v); } });
+manualUpc.addEventListener("keydown",e=>{ if(e.key==="Enter") manualCheck.click(); });
+
+/* =================== DRILL-IN: OFFER & STORE DETAIL =================== */
+const offerScrim=$("offerScrim"), storeScrim=$("storeScrim");
+offerScrim.addEventListener("click",e=>{ if(e.target===offerScrim) offerScrim.classList.remove("open"); });
+storeScrim.addEventListener("click",e=>{ if(e.target===storeScrim) storeScrim.classList.remove("open"); });
+function getOffer(cmp){ return state.offers.find(o=>o.campaign_id===cmp); }
+function storesForOffer(cmp){ return STORES.filter(s=>s.carries.includes(cmp)); }
+
+function openOffer(cmp){
+  const o=getOffer(cmp); if(!o) return;
+  const ex=o.status==="exhausted";
+  const sizes=o.sizes&&o.sizes.length?o.sizes:[{size:"Standard",upc:o.upc,cashback:o.cashback}];
+  const sizesHtml=sizes.map(s=>`
+    <div class="size-row">
+      <div><div class="sz-l">${esc(s.size)}</div><div class="sz-u">UPC ${esc(s.upc)}</div></div>
+      <div class="sz-c">${money(s.cashback)}</div>
+    </div>`).join("");
+  const stores=storesForOffer(cmp);
+  const storesHtml=stores.length?stores.map(s=>`
+    <span class="mini-store" data-store="${s.id}"><span class="ms-dot" style="background:${s.color}">${esc(s.short)}</span>${esc(s.name.split(" ")[0])} · ${esc(s.distance)}</span>`).join("")
+    :`<span class="muted small">No nearby stores listed.</span>`;
+
+  $("offerDetail").innerHTML=`
+    <div class="detail-hero">
+      <div class="dh-ic">${o.icon||"🛒"}</div>
+      <div><div class="dh-brand">${esc(o.brand||"")}</div>
+        <div class="dh-name">${esc(o.product||"")}</div>
+        <div class="dh-cb">${ex?"Fully claimed":cbDisplay(o)}</div></div>
+    </div>
+    ${ex?`<div class="banner warn">This campaign's budget is exhausted — the offer is no longer available.</div>`
+        :`<div class="banner info">${esc(o.tagline||"")} · Expires ${fmtExp(o.expires)}</div>`}
+    <div class="detail-label">Qualifying sizes</div>
+    ${sizesHtml}
+    <div class="detail-label">Where to buy</div>
+    <div style="margin:0 2px">${storesHtml}</div>
+    ${ex?"":`
+    <button class="btn btn-primary btn-block" style="margin-top:18px" id="odReceipt">Snap a receipt to earn</button>
+    <button class="btn btn-ghost btn-block" style="margin-top:10px" id="odBarcode">Scan this product</button>`}
+    <button class="btn ${ex?"btn-primary":"btn-ghost"} btn-block" style="margin-top:10px" id="odClose">Close</button>`;
+
+  offerScrim.classList.add("open");
+  $("offerDetail").querySelectorAll(".mini-store[data-store]").forEach(el=>{
+    el.addEventListener("click",()=>{ offerScrim.classList.remove("open"); openStore(el.dataset.store); });
+  });
+  const r=$("odReceipt"), b=$("odBarcode");
+  if(r) r.addEventListener("click",()=>{ offerScrim.classList.remove("open"); openReceipt(); });
+  if(b) b.addEventListener("click",()=>{ offerScrim.classList.remove("open"); $("openBarcode").click(); });
+  $("odClose").addEventListener("click",()=>offerScrim.classList.remove("open"));
+}
+
+function openStore(id){
+  const s=STORES.find(x=>x.id===id); if(!s) return;
+  const carried=s.carries.map(getOffer).filter(Boolean);
+  const active=carried.filter(o=>o.status!=="exhausted");
+  const rowsHtml=carried.length?carried.map(o=>{
+    const ex=o.status==="exhausted";
+    return `<div class="store" data-cmp="${esc(o.campaign_id)}" style="${ex?"opacity:.6":""}">
+      <div class="si" style="width:40px;height:40px;border-radius:10px;display:grid;place-items:center;font-size:20px;background:var(--cream-warm)">${o.icon||"🛒"}</div>
+      <div class="b"><div class="n">${o.brand?esc(o.brand)+" — ":""}${esc(o.product)}</div><div class="m">${ex?"Fully claimed":cbDisplay(o)}</div></div>
+      <span class="chev">›</span></div>`;
+  }).join(""):`<div class="center-load">No offers at this store yet.</div>`;
+
+  $("storeDetail").innerHTML=`
+    <div class="store-banner">
+      <div class="sb-logo" style="background:${s.color}">${esc(s.short)}</div>
+      <div><div class="sb-name">${esc(s.name)}</div><div class="sb-meta">${esc(s.distance)} · ${esc(s.address)}</div></div>
+    </div>
+    <div class="banner info">${active.length} active cashback offer${active.length===1?"":"s"} available here. Buy, then snap your receipt to claim.</div>
+    <div class="detail-label">Cashback offers here</div>
+    <div class="card">${rowsHtml}</div>
+    <button class="btn btn-ghost btn-block" style="margin-top:16px" id="stClose">Close</button>`;
+
+  storeScrim.classList.add("open");
+  $("storeDetail").querySelectorAll(".store[data-cmp]").forEach(el=>{
+    el.addEventListener("click",()=>{ storeScrim.classList.remove("open"); openOffer(el.dataset.cmp); });
+  });
+  $("stClose").addEventListener("click",()=>storeScrim.classList.remove("open"));
+}
+
+/* ===== Standalone "Cash Back site" mode =====================================
+   When reached via ?view=cashback (the disclosure-gated link-out), render only
+   the cashback module as its own page: hide the tabs + other panels, rebrand the
+   app bar with a Back link + "Cash Back", and skip the (already-shown) disclosure. */
+(function(){
+  if(!/[?&]view=cashback\b/.test(location.search)) return;
+  document.body.classList.add("cashback-only");
+  shopDisclosureShown=true;                       // disclosure already acknowledged before navigating
+  const bar=document.querySelector(".appbar");
+  if(bar) bar.innerHTML=
+    '<a class="iconbtn" href="design_preview_noclip.html" aria-label="Back to app" style="text-decoration:none;font-size:24px;font-weight:800">&#8249;</a>'
+    +'<div class="brand"><span class="spark">&#10022;</span> Cash Back</div>'
+    +'<span style="width:40px;height:40px"></span>';
+  switchTab("shop");
+})();
+</script>

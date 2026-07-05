@@ -1,0 +1,531 @@
+<style>
+  :root{
+    /* Presentation canvas (brand-derived navy-teal) */
+    --bg-0:#0B222E; --bg-1:#0F2A37; --bg-2:#143546;
+    --edge:#21455a; --edge-soft:#1a3a4c;
+    --paper-txt:#EAF1F3; --muted-txt:#9DB4BF; --faint-txt:#6E8b98;
+
+    /* Real prototype tokens (design_preview_noclip.html) */
+    --brand:#1DB0C9; --brand-2:#173D53;
+    --cream:#F9F7F1; --cream-warm:#F1EDDF; --paper:#FFFFFF;
+    --ink-900:#020817; --ink-500:#575757; --ink-400:#80808A;
+    --line-faint:#EFF0F0; --line-soft:#E2E8F0;
+    --action:#2269B5; --success:#1E8A4F; --success-bg:#DCFCE7;
+    --gold:#C58B2A; --gold-bg:#FBF1DC;
+
+    --font:"Manrope",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  .sb-root{
+    font-family:var(--font);
+    background:
+      radial-gradient(120% 90% at 15% -10%, #17475c 0%, transparent 55%),
+      radial-gradient(130% 100% at 100% 0%, #103543 0%, transparent 50%),
+      linear-gradient(180deg,var(--bg-1),var(--bg-0));
+    color:var(--paper-txt);
+    min-height:100vh;
+    padding:clamp(28px,5vw,64px) clamp(16px,4vw,56px) 72px;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ---------- Page header ---------- */
+  .sb-head{max-width:1180px;margin:0 auto 8px}
+  .sb-eyebrow{
+    display:inline-flex;align-items:center;gap:8px;
+    font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--brand);margin-bottom:14px;
+  }
+  .sb-eyebrow .spark{font-size:14px}
+  .sb-head h1{
+    font-size:clamp(28px,4.4vw,46px);line-height:1.05;font-weight:800;
+    letter-spacing:-.02em;margin:0 0 14px;text-wrap:balance;max-width:20ch;
+  }
+  .sb-head h1 em{color:var(--brand);font-style:normal}
+  .sb-lede{
+    font-size:clamp(15px,1.5vw,17px);line-height:1.55;color:var(--muted-txt);
+    max-width:64ch;margin:0 0 24px;
+  }
+
+  /* ---------- Legend ---------- */
+  .legend{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;
+    padding:14px 18px;border:1px solid var(--edge);border-radius:14px;
+    background:rgba(255,255,255,.03);max-width:1180px;margin:0 auto 6px}
+  .legend .lg{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--paper-txt)}
+  .legend .dot{width:11px;height:11px;border-radius:3px;flex:none}
+  .dot.app{background:var(--brand)}
+  .dot.sys{background:#5C7C8C}
+  .dot.mail{background:var(--gold)}
+  .legend .sep{width:1px;height:20px;background:var(--edge);margin:0 2px}
+  .legend .note{font-size:12.5px;color:var(--faint-txt)}
+
+  /* ---------- Case block ---------- */
+  .case{max-width:1180px;margin:0 auto}
+  .case-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+    margin:44px 0 4px;padding-top:22px;border-top:1px solid var(--edge-soft)}
+  .case-tag{font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--bg-0);background:var(--brand);border-radius:999px;padding:5px 12px}
+  .case-head h2{font-size:clamp(19px,2.4vw,26px);font-weight:800;letter-spacing:-.01em;margin:0}
+  .status{font-size:12px;font-weight:700;padding:4px 11px;border-radius:999px;border:1px solid}
+  .status.live{color:#7BE0B0;border-color:#2f6a52;background:rgba(30,138,79,.15)}
+  .status.auto{color:#E8C57E;border-color:#6b562a;background:rgba(197,139,42,.14)}
+  .case-sub{font-size:14.5px;line-height:1.5;color:var(--muted-txt);margin:10px 0 4px;max-width:78ch}
+  .case-sub b{color:var(--paper-txt);font-weight:700}
+
+  /* ---------- Filmstrip ---------- */
+  .strip-wrap{overflow-x:auto;overflow-y:hidden;padding:22px 4px 10px;
+    scrollbar-width:thin;scrollbar-color:var(--edge) transparent}
+  .strip-wrap::-webkit-scrollbar{height:8px}
+  .strip-wrap::-webkit-scrollbar-thumb{background:var(--edge);border-radius:99px}
+  .strip{display:flex;align-items:stretch;gap:0;min-width:min-content}
+
+  .panel{flex:none;width:266px;display:flex;flex-direction:column}
+  .p-meta{display:flex;align-items:center;gap:9px;margin-bottom:12px;min-height:26px}
+  .p-num{width:26px;height:26px;flex:none;border-radius:8px;display:grid;place-items:center;
+    font-size:13px;font-weight:800;color:var(--bg-0)}
+  .p-num.app{background:var(--brand)}
+  .p-num.sys{background:#5C7C8C;color:#fff}
+  .p-num.mail{background:var(--gold);color:#3a2a08}
+  .p-kind{font-size:10.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--faint-txt)}
+  .p-cap{font-size:13px;line-height:1.5;color:var(--muted-txt);margin-top:14px;padding:0 2px}
+  .p-cap b{color:var(--paper-txt);font-weight:700}
+
+  .stage{flex:1;display:flex;justify-content:center}
+
+  /* connector chevron */
+  .conn{flex:none;width:38px;display:flex;align-items:center;justify-content:center;
+    align-self:center;color:var(--brand);opacity:.75}
+  .conn svg{width:24px;height:24px}
+
+  /* ================= PHONE MOCK ================= */
+  .phone{width:230px;background:var(--cream);border-radius:26px;overflow:hidden;
+    border:1px solid #0a1a22;box-shadow:0 18px 40px rgba(0,0,0,.4),0 2px 0 rgba(255,255,255,.04) inset;
+    color:var(--ink-900);display:flex;flex-direction:column}
+  .ph-bar{height:44px;background:var(--paper);border-bottom:1px solid var(--line-faint);
+    display:flex;align-items:center;justify-content:space-between;padding:0 12px}
+  .ph-brand{display:flex;align-items:center;gap:5px;font-weight:800;font-size:13px;color:var(--ink-900)}
+  .ph-brand .spark{color:var(--brand);font-size:13px}
+  .ph-pill{font-size:11px;font-weight:800;color:var(--brand-2);background:var(--cream-warm);
+    border-radius:999px;padding:4px 9px;font-variant-numeric:tabular-nums}
+  .ph-screen{padding:12px;display:flex;flex-direction:column;gap:10px;min-height:318px}
+  .ph-h{font-size:15px;font-weight:800;letter-spacing:-.01em;margin:2px 0 0}
+  .ph-sub{font-size:11px;line-height:1.4;color:var(--ink-500);margin:0}
+
+  /* offer grid */
+  .o-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .o{background:var(--paper);border-radius:13px;padding:9px;box-shadow:0 1px 2px rgba(20,20,23,.06);
+    display:flex;flex-direction:column;gap:3px;border:1px solid var(--line-faint)}
+  .o-thumb{aspect-ratio:4/5;border-radius:9px;background:#fff;border:1px solid var(--line-faint);
+    display:grid;place-items:center;font-size:34px;margin-bottom:3px}
+  .o-bn{font-size:8.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-400)}
+  .o-pn{font-size:10px;font-weight:700;line-height:1.2;color:var(--ink-900)}
+  .o-cb{font-size:12px;font-weight:800;color:var(--success);margin-top:1px;font-variant-numeric:tabular-nums}
+  .o-exp{font-size:8.5px;color:var(--ink-400)}
+
+  /* receipt sheet content */
+  .btn-brand{background:var(--brand-2);color:#fff;border:0;border-radius:999px;
+    font-family:inherit;font-weight:700;font-size:12px;padding:11px;width:100%;text-align:center}
+  .btn-ghost{background:var(--line-faint);color:var(--ink-900);border:0;border-radius:999px;
+    font-family:inherit;font-weight:700;font-size:12px;padding:11px;width:100%;text-align:center}
+  .btn-primary{background:var(--action);color:#fff;border:0;border-radius:999px;
+    font-family:inherit;font-weight:700;font-size:12px;padding:11px;width:100%;text-align:center}
+  .or-div{display:flex;align-items:center;gap:8px;color:var(--ink-400);font-size:10px;margin:1px 0}
+  .or-div span{flex:1;height:1px;background:var(--line-soft)}
+  .rcpt-img{background:#fff;border:1px dashed var(--line-soft);border-radius:11px;
+    padding:12px;display:flex;flex-direction:column;gap:5px}
+  .rcpt-img .r-line{height:6px;border-radius:3px;background:#ECEFF1}
+  .rcpt-img .r-line.s{width:60%}
+  .rcpt-img .r-line.m{width:82%}
+  .rcpt-top{display:flex;justify-content:space-between;font-size:9px;font-weight:700;color:var(--ink-500)}
+
+  /* success / earned */
+  .earn-wrap{display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px;padding-top:8px}
+  .check{width:50px;height:50px;border-radius:999px;background:var(--success-bg);color:var(--success);
+    display:grid;place-items:center;margin-bottom:4px}
+  .check svg{width:26px;height:26px}
+  .earn-lab{font-size:11px;font-weight:700;color:var(--ink-500)}
+  .earn-amt{font-size:32px;font-weight:800;letter-spacing:-.02em;line-height:1;color:var(--ink-900);
+    font-variant-numeric:tabular-nums}
+  .earn-amt sup{font-size:15px;top:-.55em;font-weight:700}
+  .m-list{background:var(--paper);border-radius:12px;border:1px solid var(--line-faint);overflow:hidden;margin-top:6px}
+  .m-row{display:flex;align-items:center;gap:8px;padding:8px 10px;font-size:11px}
+  .m-row+.m-row{border-top:1px solid var(--line-faint)}
+  .m-row .em{font-size:16px}
+  .m-row .nm{flex:1;font-weight:700;color:var(--ink-900);line-height:1.15}
+  .m-row .nm small{display:block;font-weight:600;color:var(--ink-400);font-size:9px}
+  .m-row .val{font-weight:800;color:var(--success);font-variant-numeric:tabular-nums}
+
+  /* balance modal screen */
+  .bal-card{background:var(--paper);border-radius:14px;border:1px solid var(--line-faint);
+    padding:12px;display:flex;flex-direction:column;gap:9px}
+  .bal-title{display:flex;align-items:center;gap:7px;font-size:14px;font-weight:800}
+  .bal-r{display:flex;justify-content:space-between;font-size:12px;color:var(--ink-500)}
+  .bal-r .bn{font-weight:800;color:var(--ink-900);font-variant-numeric:tabular-nums}
+  .bal-r.lifetime{border-top:1px solid var(--line-faint);padding-top:8px}
+  .bal-note{font-size:10px;line-height:1.45;color:var(--ink-500);text-align:center;margin:2px 0 0}
+  .visa{margin:2px auto 0;width:112px;height:70px;border-radius:11px;position:relative;overflow:hidden;
+    background:linear-gradient(135deg,var(--brand-2),var(--brand));color:#fff;box-shadow:0 6px 16px rgba(0,0,0,.18)}
+  .visa .vt{font-size:8px;font-weight:800;padding:9px 9px 0;letter-spacing:.02em}
+  .visa .chip{width:16px;height:12px;border-radius:3px;background:#ffd87a;margin:8px 0 0 9px}
+  .visa .vv{position:absolute;right:9px;bottom:7px;font-style:italic;font-weight:800;font-size:14px}
+
+  /* ================= SYSTEM TILE ================= */
+  .systile{width:230px;background:linear-gradient(180deg,#1a3d50,#15303f);border:1px solid #2b5670;
+    border-radius:20px;padding:16px;display:flex;flex-direction:column;gap:11px;min-height:362px;color:var(--paper-txt)}
+  .sys-badge{display:inline-flex;align-items:center;gap:7px;align-self:flex-start;
+    font-size:9.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#8FD3E0;
+    background:rgba(29,176,201,.12);border:1px solid #2f5f74;border-radius:999px;padding:4px 9px}
+  .sys-ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;
+    background:rgba(29,176,201,.14);border:1px solid #2f6072;color:#8FD3E0;margin-top:2px}
+  .sys-ic svg{width:24px;height:24px}
+  .sys-t{font-size:14.5px;font-weight:800;letter-spacing:-.01em;line-height:1.2}
+  .sys-d{font-size:11.5px;line-height:1.5;color:var(--muted-txt)}
+  .sys-flow{margin-top:auto;display:flex;flex-direction:column;gap:6px;
+    background:rgba(0,0,0,.18);border:1px solid #274d61;border-radius:11px;padding:10px}
+  .sf-row{display:flex;align-items:center;gap:7px;font-size:10.5px;font-weight:600;color:#C7DBE3}
+  .sf-row .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9.5px;color:#8FD3E0}
+  .sf-arrow{color:#5C7C8C;text-align:center;font-size:12px;line-height:.6}
+  .sf-hit{color:#7BE0B0;font-weight:800}
+
+  /* ================= EMAIL MOCK ================= */
+  .email{width:230px;background:var(--paper);border-radius:16px;overflow:hidden;
+    border:1px solid #d9d2c2;box-shadow:0 18px 40px rgba(0,0,0,.4);color:var(--ink-900);
+    display:flex;flex-direction:column;min-height:362px}
+  .em-bar{background:var(--gold-bg);border-bottom:1px solid #ecdcb8;padding:10px 13px;display:flex;
+    align-items:center;gap:9px}
+  .em-ava{width:30px;height:30px;border-radius:999px;background:var(--brand-2);color:#fff;
+    display:grid;place-items:center;font-size:13px;flex:none}
+  .em-from{font-size:11px;font-weight:800;line-height:1.2}
+  .em-addr{font-size:9.5px;color:var(--ink-400)}
+  .em-body{padding:14px 14px 16px;display:flex;flex-direction:column;gap:10px}
+  .em-subj{font-size:14.5px;font-weight:800;letter-spacing:-.01em;line-height:1.25}
+  .em-hero{background:var(--success-bg);border-radius:12px;padding:13px;text-align:center}
+  .em-hero .h-lab{font-size:10.5px;font-weight:700;color:#166a3d}
+  .em-hero .h-amt{font-size:28px;font-weight:800;color:var(--success);line-height:1;margin-top:2px;
+    font-variant-numeric:tabular-nums}
+  .em-hero .h-amt sup{font-size:14px;top:-.5em}
+  .em-detail{border:1px solid var(--line-faint);border-radius:11px;overflow:hidden}
+  .em-dr{display:flex;justify-content:space-between;padding:7px 11px;font-size:10.5px}
+  .em-dr+.em-dr{border-top:1px solid var(--line-faint)}
+  .em-dr .k{color:var(--ink-500)}
+  .em-dr .v{font-weight:700;color:var(--ink-900);font-variant-numeric:tabular-nums}
+  .em-p{font-size:10.5px;line-height:1.55;color:var(--ink-500);margin:0}
+  .em-cta{background:var(--action);color:#fff;border-radius:999px;font-size:11px;font-weight:700;
+    text-align:center;padding:9px}
+
+  /* ---------- footer note ---------- */
+  .foot{max-width:1180px;margin:52px auto 0;padding-top:22px;border-top:1px solid var(--edge-soft);
+    display:flex;flex-wrap:wrap;gap:22px}
+  .foot .fcol{flex:1;min-width:240px}
+  .foot h3{font-size:12px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--brand);margin:0 0 9px}
+  .foot p{font-size:13px;line-height:1.6;color:var(--muted-txt);margin:0}
+  .foot code{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#B9D6E0;
+    background:rgba(255,255,255,.05);padding:1px 5px;border-radius:5px}
+
+  @media (max-width:560px){
+    .sb-head h1{font-size:30px}
+    .legend{gap:8px 14px}
+  }
+</style>
+
+<div class="sb-root">
+
+  <header class="sb-head">
+    <div class="sb-eyebrow"><span class="spark">✦</span> CPG Rewards · Member Experience</div>
+    <h1>Two ways members earn <em>CPG cash back</em></h1>
+    <p class="sb-lede">A side-by-side storyboard of how a member earns rewards on everyday consumer-brand
+      products, drawn directly from the live Sunny Benefits prototype. Case&nbsp;1 is the receipt-scan flow
+      running today; Case&nbsp;2 is the card-linked path where filtered spend does the matching automatically.</p>
+  </header>
+
+  <div class="legend">
+    <span class="lg"><span class="dot app"></span> App screen the member sees</span>
+    <span class="lg"><span class="dot sys"></span> System / backend step</span>
+    <span class="lg"><span class="dot mail"></span> Email the member receives</span>
+    <span class="sep"></span>
+    <span class="note">Screens rendered in the prototype's own design system — real offers, real copy.</span>
+  </div>
+
+  <!-- ============================ CASE 1 ============================ -->
+  <section class="case">
+    <div class="case-head">
+      <span class="case-tag">Case 1</span>
+      <h2>Receipt scanning</h2>
+      <span class="status live">● Live in prototype today</span>
+    </div>
+    <p class="case-sub">The member browses CPG deals, <b>snaps a photo of their receipt</b>, and the system
+      reads it with OCR, matches the line items to active offers, and pays the cash back to their Sunny Rewards card.</p>
+
+    <div class="strip-wrap">
+      <div class="strip">
+
+        <!-- 1. Browse deals -->
+        <div class="panel">
+          <div class="p-meta"><span class="p-num app">1</span><span class="p-kind">App · Browse</span></div>
+          <div class="stage">
+            <div class="phone">
+              <div class="ph-bar"><span class="ph-brand"><span class="spark">✦</span> ABC Health</span><span class="ph-pill">$0.00</span></div>
+              <div class="ph-screen">
+                <div class="ph-h">Rewards</div>
+                <p class="ph-sub">Earn cash back on everyday brands.</p>
+                <div class="o-grid">
+                  <div class="o"><div class="o-thumb">💊</div><div class="o-bn">Centrum</div><div class="o-pn">Silver Adult 50+</div><div class="o-cb">+$3.00</div><div class="o-exp">Exp 7/31</div></div>
+                  <div class="o"><div class="o-thumb">💊</div><div class="o-bn">Claritin</div><div class="o-pn">24HR Allergy</div><div class="o-cb">+$4.00</div><div class="o-exp">Exp 7/31</div></div>
+                  <div class="o"><div class="o-thumb">🥤</div><div class="o-bn">Ensure</div><div class="o-pn">Nutrition Shake</div><div class="o-cb">+$3.00</div><div class="o-exp">Exp 7/15</div></div>
+                  <div class="o"><div class="o-thumb">💊</div><div class="o-bn">Advil</div><div class="o-pn">Ibuprofen 200mg</div><div class="o-cb">+$2.00</div><div class="o-exp">Exp 8/30</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="p-cap">Member opens the Rewards app and browses <b>CPG deals</b> — real offers with per-product cash back.</p>
+        </div>
+
+        <div class="conn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg></div>
+
+        <!-- 2. Snap a receipt -->
+        <div class="panel">
+          <div class="p-meta"><span class="p-num app">2</span><span class="p-kind">App · Capture</span></div>
+          <div class="stage">
+            <div class="phone">
+              <div class="ph-bar"><span class="ph-brand"><span class="spark">✦</span> ABC Health</span><span class="ph-pill">$0.00</span></div>
+              <div class="ph-screen">
+                <div class="ph-h">Snap your receipt</div>
+                <p class="ph-sub">Submit a receipt with qualifying products to earn rewards.</p>
+                <div class="rcpt-img">
+                  <div class="rcpt-top"><span>PHARMACY</span><span>07/02</span></div>
+                  <div class="r-line m"></div><div class="r-line s"></div>
+                  <div class="r-line m"></div><div class="r-line s"></div>
+                  <div class="r-line"></div>
+                </div>
+                <div class="btn-brand">📸 Capture receipt with camera</div>
+                <div class="or-div"><span></span>OR<span></span></div>
+                <div class="btn-ghost">📤 Upload a receipt</div>
+              </div>
+            </div>
+          </div>
+          <p class="p-cap">Taps <b>Snap a receipt</b> and photographs the paper receipt from the store.</p>
+        </div>
+
+        <div class="conn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg></div>
+
+        <!-- 3. System: OCR + match -->
+        <div class="panel">
+          <div class="p-meta"><span class="p-num sys">3</span><span class="p-kind">System · Match</span></div>
+          <div class="stage">
+            <div class="systile">
+              <span class="sys-badge">◆ OCR + Matching</span>
+              <div class="sys-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h11a2 2 0 0 1 2 2v14l-3-2-3 2-3-2-3 2V6a2 2 0 0 1 2-2z"/><path d="M8 8h7M8 12h5"/></svg></div>
+              <div class="sys-t">Read the receipt, match the offers</div>
+              <div class="sys-d">Veryfi OCR extracts every line item and UPC. The backend matches them to active offers — quantity-aware, so 2× a product pays 2× the cash back.</div>
+              <div class="sys-flow">
+                <div class="sf-row"><span class="mono">Centrum 50+ ·1</span></div>
+                <div class="sf-arrow">↓</div>
+                <div class="sf-row"><span>UPC 300450449108</span> <span class="sf-hit">✓ $3.00</span></div>
+                <div class="sf-arrow">↓</div>
+                <div class="sf-row"><span>Ensure ✓ $3 · Advil ✓ $2</span></div>
+              </div>
+            </div>
+          </div>
+          <p class="p-cap"><b>Veryfi</b> reads the receipt; the matcher lines UPCs up against active offers.</p>
+        </div>
+
+        <div class="conn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg></div>
+
+        <!-- 4. Result -->
+        <div class="panel">
+          <div class="p-meta"><span class="p-num app">4</span><span class="p-kind">App · Result</span></div>
+          <div class="stage">
+            <div class="phone">
+              <div class="ph-bar"><span class="ph-brand"><span class="spark">✦</span> ABC Health</span><span class="ph-pill">$8.00</span></div>
+              <div class="ph-screen">
+                <div class="earn-wrap">
+                  <div class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>
+                  <div class="earn-lab">You earned</div>
+                  <div class="earn-amt"><sup>$</sup>8.00</div>
+                </div>
+                <div class="m-list">
+                  <div class="m-row"><span class="em">💊</span><span class="nm">Centrum Silver 50+<small>100 ct</small></span><span class="val">+$3.00</span></div>
+                  <div class="m-row"><span class="em">🥤</span><span class="nm">Ensure Shake<small>6 ct</small></span><span class="val">+$3.00</span></div>
+                  <div class="m-row"><span class="em">💊</span><span class="nm">Advil 200mg<small>100 ct</small></span><span class="val">+$2.00</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="p-cap">Instantly sees <b>which products matched</b> and the total cash back earned.</p>
+        </div>
+
+        <div class="conn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg></div>
+
+        <!-- 5. Balance -->
+        <div class="panel">
+          <div class="p-meta"><span class="p-num app">5</span><span class="p-kind">App · Rewards</span></div>
+          <div class="stage">
+            <div class="phone">
+              <div class="ph-bar"><span class="ph-brand"><span class="spark">✦</span> ABC Health</span><span class="ph-pill">$8.00</span></div>
+              <div class="ph-screen">
+                <div class="ph-h">Your Rewards</div>
+                <div class="bal-card">
+                  <div class="bal-title">💰 Sunny Rewards</div>
+                  <div class="bal-r"><span>Rewards balance</span><span class="bn">$8.00</span></div>
+                  <div class="bal-r"><span>Pending review</span><span class="bn">$0.00</span></div>
+                  <div class="bal-r lifetime"><span>Lifetime rewards</span><span class="bn">$8.00</span></div>
+                </div>
+                <div class="visa"><div class="vt">Sunny Rewards</div><div class="chip"></div><div class="vv">VISA</div></div>
+                <p class="bal-note">Balance is available to spend on the Sunny Rewards card. Pending items clear within 24 hours.</p>
+              </div>
+            </div>
+          </div>
+          <p class="p-cap">Cash back lands on the <b>Sunny Rewards card</b>, ready to spend.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ CASE 2 ============================ -->
+  <section class="case">
+    <div class="case-head">
+      <span class="case-tag">Case 2</span>
+      <h2>Card-linked auto-processing</h2>
+      <span class="status auto">◆ Filtered-spend path</span>
+    </div>
+    <p class="case-sub">The member browses the same deals, then simply <b>buys the product with their Sunny card</b>.
+      Filtered spend recognizes the purchase, auto-matches it to an active campaign, and credits the reward —
+      <b>no receipt, no scan</b>. The member just gets an email confirming the cash back.</p>
+
+    <div class="strip-wrap">
+      <div class="strip">
+
+        <!-- 1. Browse deals -->
+        <div class="panel">
+          <div class="p-meta"><span class="p-num app">1</span><span class="p-kind">App · Browse</span></div>
+          <div class="stage">
+            <div class="phone">
+              <div class="ph-bar"><span class="ph-brand"><span class="spark">✦</span> ABC Health</span><span class="ph-pill">$0.00</span></div>
+              <div class="ph-screen">
+                <div class="ph-h">Rewards</div>
+                <p class="ph-sub">Earn cash back on everyday brands.</p>
+                <div class="o-grid">
+                  <div class="o"><div class="o-thumb">💊</div><div class="o-bn">Centrum</div><div class="o-pn">Silver Adult 50+</div><div class="o-cb">+$3.00</div><div class="o-exp">Exp 7/31</div></div>
+                  <div class="o"><div class="o-thumb">💊</div><div class="o-bn">Claritin</div><div class="o-pn">24HR Allergy</div><div class="o-cb">+$4.00</div><div class="o-exp">Exp 7/31</div></div>
+                  <div class="o"><div class="o-thumb">🥤</div><div class="o-bn">Ensure</div><div class="o-pn">Nutrition Shake</div><div class="o-cb">+$3.00</div><div class="o-exp">Exp 7/15</div></div>
+                  <div class="o"><div class="o-thumb">🥜</div><div class="o-bn">Nature Valley</div><div class="o-pn">Granola Bars</div><div class="o-cb">+$1.50</div><div class="o-exp">Exp 7/31</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="p-cap">Same starting point — the member sees the <b>CPG deals</b> in the app.</p>
+        </div>
+
+        <div class="conn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg></div>
+
+        <!-- 2. Pay with Sunny card -->
+        <div class="panel">
+          <div class="p-meta"><span class="p-num app">2</span><span class="p-kind">In store · Purchase</span></div>
+          <div class="stage">
+            <div class="systile" style="background:linear-gradient(180deg,#20455a,#183849)">
+              <span class="sys-badge" style="color:#E8C57E;background:rgba(197,139,42,.14);border-color:#6b562a">◆ At checkout</span>
+              <div class="sys-ic" style="color:#E8C57E;background:rgba(197,139,42,.14);border-color:#6b562a"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2.5"/><path d="M2 10h20"/></svg></div>
+              <div class="sys-t">Buys the product with the Sunny card</div>
+              <div class="sys-d">The member picks up Centrum Silver at the pharmacy and pays with their Sunny Rewards card — a normal purchase, nothing extra to do.</div>
+              <div class="visa" style="margin-top:auto"><div class="vt">Sunny Rewards</div><div class="chip"></div><div class="vv">VISA</div></div>
+            </div>
+          </div>
+          <p class="p-cap">Pays for <b>Centrum Silver</b> with the Sunny card at the register.</p>
+        </div>
+
+        <div class="conn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg></div>
+
+        <!-- 3. Filtered spend match -->
+        <div class="panel">
+          <div class="p-meta"><span class="p-num sys">3</span><span class="p-kind">System · Filtered spend</span></div>
+          <div class="stage">
+            <div class="systile">
+              <span class="sys-badge">◆ Auto-match</span>
+              <div class="sys-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M6 12h12M10 18h4"/></svg></div>
+              <div class="sys-t">Filtered spend recognizes the purchase</div>
+              <div class="sys-d">The card transaction flows through filtered spend, which matches the purchased product against active reward campaigns — automatically, with no receipt.</div>
+              <div class="sys-flow">
+                <div class="sf-row"><span>Card txn · Pharmacy</span></div>
+                <div class="sf-arrow">↓</div>
+                <div class="sf-row"><span class="mono">Centrum 50+</span> <span class="sf-hit">✓ CMP-1002</span></div>
+                <div class="sf-arrow">↓</div>
+                <div class="sf-row"><span>Matched to active offer</span></div>
+              </div>
+            </div>
+          </div>
+          <p class="p-cap">The transaction is <b>auto-matched</b> to the campaign — no member action.</p>
+        </div>
+
+        <div class="conn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg></div>
+
+        <!-- 4. Auto credit -->
+        <div class="panel">
+          <div class="p-meta"><span class="p-num sys">4</span><span class="p-kind">System · Credit</span></div>
+          <div class="stage">
+            <div class="systile">
+              <span class="sys-badge">◆ Reward applied</span>
+              <div class="sys-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+              <div class="sys-t">Cash back is applied automatically</div>
+              <div class="sys-d">The reward is credited straight to the Sunny Rewards card — no clipping, no scanning, no waiting on a submission.</div>
+              <div class="sys-flow">
+                <div class="sf-row"><span>Reward</span> <span class="sf-hit">+$3.00</span></div>
+                <div class="sf-arrow">↓</div>
+                <div class="sf-row"><span>Credited to</span> <span class="mono">Sunny Rewards ••42</span></div>
+              </div>
+            </div>
+          </div>
+          <p class="p-cap">The reward is <b>credited to the card</b> with zero effort from the member.</p>
+        </div>
+
+        <div class="conn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg></div>
+
+        <!-- 5. Email -->
+        <div class="panel">
+          <div class="p-meta"><span class="p-num mail">5</span><span class="p-kind">Email · What they see</span></div>
+          <div class="stage">
+            <div class="email">
+              <div class="em-bar">
+                <div class="em-ava">✦</div>
+                <div><div class="em-from">ABC Health Rewards</div><div class="em-addr">rewards@sunnybenefits.com</div></div>
+              </div>
+              <div class="em-body">
+                <div class="em-subj">You earned $3.00 back on Centrum Silver 🎉</div>
+                <div class="em-hero"><div class="h-lab">Cash back added to your card</div><div class="h-amt"><sup>$</sup>3.00</div></div>
+                <div class="em-detail">
+                  <div class="em-dr"><span class="k">Product</span><span class="v">Centrum Silver 50+</span></div>
+                  <div class="em-dr"><span class="k">Where</span><span class="v">Pharmacy · 07/02</span></div>
+                  <div class="em-dr"><span class="k">Rewards balance</span><span class="v">$3.00</span></div>
+                </div>
+                <p class="em-p">This reward was applied automatically to your Sunny Rewards card. Nothing else to do — enjoy!</p>
+                <div class="em-cta">View my rewards</div>
+              </div>
+            </div>
+          </div>
+          <p class="p-cap">The member's only touchpoint: an <b>email</b> confirming the auto cash back.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- footer ---------- -->
+  <div class="foot">
+    <div class="fcol">
+      <h3>What's built today</h3>
+      <p>Case&nbsp;1 runs in the live prototype: <code>Veryfi</code> OCR plus the quantity-aware
+        <code>match_receipt_to_clipped</code> matcher, rendered in the app's real design system.</p>
+    </div>
+    <div class="fcol">
+      <h3>What Case 2 shows</h3>
+      <p>The card-linked, filtered-spend path — the member buys on the Sunny card and the reward is matched and
+        credited automatically. This is the target automatic experience, illustrated here for alignment.</p>
+    </div>
+    <div class="fcol">
+      <h3>The takeaway</h3>
+      <p>Same deals, two levels of effort: <b>scan a receipt</b> to earn, or <b>let the card do it</b>.
+        Both pay to the same Sunny Rewards card.</p>
+    </div>
+  </div>
+
+</div>
