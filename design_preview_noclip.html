@@ -900,18 +900,6 @@ body.cashback-only .action-bar{ display:flex }
         <div class="bonus-list" id="bonusesProduct"></div>
       </div>
 
-      <!-- Store-first cluster: ranked store-brand grid -->
-      <div id="storeBrandGrid" class="hidden">
-        <div class="section-label">See deals by store <button class="small zip-btn" style="background:transparent;border:0;padding:0;cursor:pointer;color:var(--link);font-weight:700;font-family:inherit">📍 20814 · Change</button></div>
-        <div class="store-grid" id="storeTiles"></div>
-
-        <div class="section-label">Get more rewards with bonuses</div>
-        <div class="bonus-list" id="bonusesStore"></div>
-      </div>
-
-      <!-- Store-first: full in-page store view (rendered on tap) -->
-      <div id="storeView" class="hidden"></div>
-
       <div id="rewardsCommon">
         <div id="shopNear">
           <div class="section-label">Shop near you <button class="small zip-btn" style="background:transparent;border:0;padding:0;cursor:pointer;color:var(--link);font-weight:700;font-family:inherit">📍 20814 · Change</button></div>
@@ -927,12 +915,6 @@ body.cashback-only .action-bar{ display:flex }
           <div class="hc-body">
             <div class="hc-d">Not to worry, our Care team is here to help. <button class="hc-link" onclick="toast('Support ticket form would open here')">Submit a ticket</button></div>
           </div>
-        </div>
-
-        <div class="section-label" style="margin-top:20px">Browse experience</div>
-        <div class="seg-toggle" id="browseToggle">
-          <button class="on" data-browse="product">By product</button>
-          <button data-browse="store">By store</button>
         </div>
 
         <div class="footer-legal">
@@ -1362,7 +1344,7 @@ function openZip(){ $("zipInput").value=MEMBER_ZIP; zipScrim.classList.add("open
 function applyZip(z){
   z=String(z||"").replace(/\D/g,"").slice(0,5);
   if(z.length!==5){ toast("Enter a 5-digit ZIP code"); return; }
-  MEMBER_ZIP=z; setZipLabel(); renderStores(); if(browseMode==="store") renderStoreTiles(); zipScrim.classList.remove("open");
+  MEMBER_ZIP=z; setZipLabel(); renderStores(); zipScrim.classList.remove("open");
   toast("Showing stores near "+MEMBER_ZIP);
 }
 document.querySelectorAll(".zip-btn").forEach(b=>b.addEventListener("click",openZip));
@@ -1914,76 +1896,11 @@ function bonusRow(b){
 }
 function renderBonuses(){
   const html=BONUSES.map(bonusRow).join("");
-  ["bonusesProduct","bonusesStore"].forEach(id=>{ const el=$(id); if(el) el.innerHTML=html; });
+  const el=$("bonusesProduct"); if(el) el.innerHTML=html;
 }
 
-/* ===== Browse experience: product-first (default) vs store-first (Ibotta-style) ===== */
-let browseMode="product";
-function renderStoreTiles(){
-  const el=$("storeTiles"); if(!el) return;
-  const tiles=STORES.slice().sort((a,b)=>nearestDist(a)-nearestDist(b));
-  el.innerHTML=tiles.map(s=>{
-    const n = state.offers.length ? s.carries.filter(c=>state.offers.some(o=>o.campaign_id===c)).length : s.carries.length;
-    return `<div class="store-tile" data-store="${esc(s.id)}">
-      <div class="st-logo" style="background:${s.color}">${esc(s.short)}</div>
-      <div class="st-name">${esc(s.name)}</div>
-      <div class="st-meta">${n} offer${n===1?"":"s"} · ${fmtMi(nearestDist(s))}</div>
-    </div>`;
-  }).join("");
-  el.querySelectorAll(".store-tile[data-store]").forEach(t=>t.addEventListener("click",()=>openStoreView(t.dataset.store)));
-}
-function openStoreView(id){
-  const s=STORES.find(x=>x.id===id); if(!s) return;
-  const locs=(s.locations||[]).slice().sort((a,b)=>a.dist-b.dist).slice(0,3);
-  const locHtml=locs.map(l=>`<div class="store"><div class="logo" style="background:${s.color}">${esc(s.short)}</div><div class="b"><div class="n">${esc(s.name)}</div><div class="m">${esc(l.address)} · ${fmtMi(l.dist)}</div></div><button class="btn btn-ghost" style="width:auto;padding:8px 12px;font-size:12px;white-space:nowrap" onclick="toast('Opening directions…')">Directions</button></div>`).join("");
-  const carried=s.carries.map(getOffer).filter(Boolean);
-  const grid=carried.length?carried.map(o=>`
-    <div class="offer clickable" data-cmp="${esc(o.campaign_id)}">
-      <div class="ic">${o.image?`<img src="${esc(o.image)}" alt="${esc(o.product||'')}">`:(o.icon||"🛒")}</div>
-      <div class="brand-n">${esc(o.brand||"")}</div>
-      <div class="prod">${esc(o.product||"")}</div>
-      <div class="cb">${cbDisplay(o)}</div>
-      <div class="exp">${o.expires?("Expires "+fmtExp(o.expires)):""}</div>
-    </div>`).join(""):`<div class="center-load" style="grid-column:1/-1">No offers at this store yet.</div>`;
-  $("storeView").innerHTML=`
-    <button class="btn btn-ghost" id="svBack" style="width:auto;padding:8px 14px;margin:2px 0 12px">‹ All stores</button>
-    <div class="store-banner">
-      <div class="sb-logo" style="background:${s.color}">${esc(s.short)}</div>
-      <div><div class="sb-name">${esc(s.name)}</div><div class="sb-meta">Near ${esc(MEMBER_ZIP)} · ${s.locations.length} locations</div></div>
-    </div>
-    <div class="detail-label">Closest locations</div>
-    <div class="card">${locHtml}</div>
-    <div class="detail-label">Rewards offers here</div>
-    <div class="offer-grid">${grid}</div>`;
-  $("featuredSection").classList.add("hidden");
-  $("pfCluster").classList.add("hidden"); $("storeBrandGrid").classList.add("hidden"); $("rewardsCommon").classList.add("hidden");
-  $("storeView").classList.remove("hidden");
-  $("storeView").querySelectorAll(".offer[data-cmp]").forEach(el=>el.addEventListener("click",()=>openOffer(el.dataset.cmp)));
-  $("svBack").addEventListener("click",()=>setBrowse("store"));
-  const m=document.querySelector("main"); if(m) m.scrollTop=0;
-}
-function setBrowse(mode){
-  browseMode=mode; try{localStorage.setItem("cpgBrowse",mode);}catch(e){}
-  document.querySelectorAll("#browseToggle button").forEach(b=>b.classList.toggle("on",b.dataset.browse===mode));
-  const store=mode==="store";
-  const sv=$("storeView"); if(sv){ sv.classList.add("hidden"); sv.innerHTML=""; }
-  $("featuredSection").classList.remove("hidden");
-  $("rewardsCommon").classList.remove("hidden");
-  $("pfCluster").classList.toggle("hidden", store);
-  $("storeBrandGrid").classList.toggle("hidden", !store);
-  $("shopNear").classList.toggle("hidden", store);
-  if(store) renderStoreTiles();
-  const m=document.querySelector("main"); if(m) m.scrollTop=0;
-}
-document.querySelectorAll("#browseToggle button").forEach(b=>b.addEventListener("click",()=>setBrowse(b.dataset.browse)));
+/* store-first browse & toggle removed — product-first only */
 renderBonuses();
-(function(){
-  let m="product";
-  try{ m=localStorage.getItem("cpgBrowse")||"product"; }catch(e){}
-  const pm=(location.search.match(/[?&]browse=(product|store)\b/)||[])[1];
-  if(pm) m=pm;
-  if(m==="store") setBrowse("store");
-})();
 
 /* ===== Standalone "Cash Back site" mode =====================================
    When reached via ?view=cashback (the disclosure-gated link-out), render only
